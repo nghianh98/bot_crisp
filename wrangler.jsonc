@@ -35,6 +35,9 @@
       "head_sampling_rate": 1
     }
   },
+  // Giữ biến đặt trên dashboard khi deploy (chỉ giữ được biến có trong bản upload gần nhất).
+  // Khoá bí mật (CRISP_*, ADMIN_KEY…) hãy đặt dạng Secret: deploy không bao giờ xoá secret.
+  "keep_vars": true,
   "vars": {
     "BUSINESS_HOURS": "Mon-Sun 08:00-24:00",
     "SUPPORT_EMAIL": "support@transtore.app"

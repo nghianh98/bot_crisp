@@ -67,6 +67,8 @@ Lưu ý:
 
 Mỗi lệnh sẽ hỏi giá trị, gõ vào terminal. Khoá Crisp lấy ở Crisp Marketplace → plugin → Tokens (Production) và Settings → Events.
 
+**Luôn đặt khoá dạng Secret, đừng đặt dạng Variable (Text).** Biến dạng Text đặt trên dashboard có thể bị `npm run deploy` xoá: `keep_vars` trong [wrangler.jsonc](wrangler.jsonc) chỉ giữ được biến của bản upload gần nhất. Secret thì deploy không bao giờ đụng tới. Khi deploy mà wrangler báo "local configuration … differs from the remote configuration", dừng lại xem trên dashboard vừa đổi gì trước khi chạy tiếp.
+
 ```bash
 npx wrangler secret put ADMIN_KEY
 ```
