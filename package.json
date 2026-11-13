@@ -3,13 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "deploy": "wrangler deploy --env=''",
-    "deploy:dev": "wrangler deploy --env dev",
-    "logs:dev": "wrangler tail --env dev",
+    "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "check": "wrangler deploy --env='' --dry-run --outdir dist && wrangler deploy --env dev --dry-run",
-    "logs": "wrangler tail --env=''",
+    "check": "wrangler deploy --dry-run --outdir dist",
+    "logs": "wrangler tail",
     "versions": "wrangler versions list"
   },
   "devDependencies": {

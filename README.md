@@ -4,9 +4,10 @@ Bot AI trả lời khách trên Crisp khi team offline, kiểu Intercom Fin. Ch�
 
 | Worker | Dùng để | Admin | Dữ liệu (KV) |
 |---|---|---|---|
-| `transtore-bot-prod` | Bot thật | https://transtore-bot-prod.transtore.workers.dev/admin | `transtore-bot-kb` |
-| `transtore-bot-dev` | Thử code trước | https://transtore-bot-dev.transtore.workers.dev/admin | `transtore-bot-dev-kb` |
-| `transtore-bot` | Bot cũ, sửa trên dashboard. **Đã ẩn** (tắt URL và cron), giữ nguyên code, khoá và lịch sử. Không xoá. | | `transtore-bot-kb` |
+| `transtore-bot-prod` | Bot thật, deploy từ repo này | https://transtore-bot-prod.transtore.workers.dev/admin | `transtore-bot-kb` |
+| `transtore-bot` | Bot cũ, sửa trên dashboard. **Đã tắt** (không URL, không cron), giữ nguyên code, khoá và lịch sử. Không xoá. | | `transtore-bot-kb` |
+
+Muốn thử code trước khi đưa lên: chạy ở máy (`npm run dev`) và dùng khung Test the bot.
 
 Webhook Crisp gửi về `/crisp/hooks` của bot thật.
 
@@ -67,40 +68,22 @@ Lưu ý:
 Mỗi lệnh sẽ hỏi giá trị, gõ vào terminal. Khoá Crisp lấy ở Crisp Marketplace → plugin → Tokens (Production) và Settings → Events.
 
 ```bash
-npx wrangler secret put ADMIN_KEY --env=''
+npx wrangler secret put ADMIN_KEY
 ```
 
 ```bash
-npx wrangler secret put CRISP_IDENTIFIER --env=''
+npx wrangler secret put CRISP_IDENTIFIER
 ```
 
 ```bash
-npx wrangler secret put CRISP_KEY --env=''
+npx wrangler secret put CRISP_KEY
 ```
 
 ```bash
-npx wrangler secret put CRISP_HOOK_SECRET --env=''
+npx wrangler secret put CRISP_HOOK_SECRET
 ```
 
 Rồi vào admin → Settings → AI nhập khoá OpenAI và chọn model, và đổi webhook production trong Crisp Marketplace sang `https://transtore-bot-prod.transtore.workers.dev/crisp/hooks`. Bot mode đang là Off: bật lại ở admin khi mọi thứ sẵn sàng.
-
-## Bản thử: transtore-bot-dev
-
-Worker riêng để thử code trước khi đưa lên bot thật: https://transtore-bot-dev.transtore.workers.dev/admin
-
-- KV riêng `transtore-bot-dev-kb`, đã chép guidance, snippet, tag, cài đặt, knowledge từ bot thật (ngày 13/11/2026). Sửa ở đây không ảnh hưởng bot thật.
-- Không nối webhook production của Crisp vào bản này, nếu không khách sẽ nhận 2 câu trả lời. Thử bằng khung Test the bot.
-- Khoá đặt riêng cho bản này: `ADMIN_KEY` bằng lệnh dưới (lệnh sẽ hỏi giá trị, gõ vào terminal), khoá OpenAI nhập trong admin → Settings → AI.
-
-```bash
-npx wrangler secret put ADMIN_KEY --env dev
-```
-
-Đưa code lên bản thử:
-
-```bash
-npm run deploy:dev
-```
 
 ## Xem log bot đang chạy
 
