@@ -1,5 +1,7 @@
 {
-  "name": "transtore-bot",
+  // Bot production. Bot cũ "transtore-bot" (code sửa trên dashboard) đã ẩn ngày 13/11/2026: tắt URL workers.dev và cron,
+  // giữ nguyên code, khoá và lịch sử deploy để quay lại khi cần. Không config nào ở đây deploy vào nó nữa.
+  "name": "transtore-bot-prod",
   "main": "src/worker.js",
   // Đẩy lên y nguyên từng file trong src/ (không gộp), để editor trên dashboard vẫn thấy đúng cây thư mục.
   // .js = code Worker, .txt/.html = văn bản (giao diện admin).
@@ -42,5 +44,22 @@
       "id": "8dfd5426a1414f89a37d1b2fe4a80237",
       "binding": "KB"
     }
-  ]
+  ],
+  "env": {
+    // Bản thử: `npm run deploy:dev` → worker transtore-bot-dev, KV riêng transtore-bot-dev-kb (không đụng dữ liệu bot thật).
+    // Đừng nối webhook production của Crisp vào bản này: khách sẽ nhận 2 câu trả lời từ 2 bot.
+    "dev": {
+      "name": "transtore-bot-dev",
+      "vars": {
+        "BUSINESS_HOURS": "Mon-Sun 08:00-24:00",
+        "SUPPORT_EMAIL": "support@transtore.app"
+      },
+      "kv_namespaces": [
+        {
+          "id": "8317654af7dd4c498605912de270daa4",
+          "binding": "KB"
+        }
+      ]
+    }
+  }
 }
