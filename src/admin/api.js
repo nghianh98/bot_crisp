@@ -3,6 +3,7 @@
 import { isAdmin, whoOf } from "./auth.js";
 import { callOpenAI, generateReply, listModels, productLine } from "../ai.js";
 import { handoffNote } from "../handoff.js";
+import { cleanCustomer } from "../crisp.js";
 import { AI_FALLBACK_REPLY, AI_KEY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_LABELS, QUEUE, SETTINGS_FIELDS, TRIGGERS, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, withAiKey, withConfig } from "../config.js";
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
@@ -405,7 +406,7 @@ export async function apiTest(env, body) {
   const t0 = Date.now();
   let r;
   try {
-    r = await generateReply(env, msgs, { handedOff: !!body.handedOff });
+    r = await generateReply(env, msgs, { handedOff: !!body.handedOff, customer: cleanCustomer(body.customer) });
   } catch (e) {
     // AI hỏng: cho người thử thấy đúng câu khách thật sẽ nhận, kèm lý do
     r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: e?.message || String(e) };

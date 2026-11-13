@@ -67,6 +67,36 @@ export async function compose(env, websiteId, sessionId, on) {
   } catch {}
 }
 
+// Thông tin app đã gửi vào Crisp cho hội thoại này (session data: store_domain, app_plan, shopify_plan…) + tên khách.
+// Không gửi email và mấy thứ giống khoá bí mật cho AI: bot không cần, đỡ lộ dữ liệu khách (team vẫn thấy trong Crisp).
+const SKIP_KEY = /token|secret|password|api.?key|signature|hmac/i;
+const IS_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function cleanCustomer(data, extra = {}) {
+  const out = {};
+  const seen = new Set();
+  for (const [k, v] of Object.entries({ ...extra, ...(data && typeof data === "object" ? data : {}) })) {
+    if (Object.keys(out).length >= 15) break;
+    if (SKIP_KEY.test(k) || v == null || typeof v === "object") continue;
+    const s = String(v).replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!s || IS_EMAIL.test(s) || seen.has(s.toLowerCase())) continue;
+    seen.add(s.toLowerCase());
+    out[String(k).trim().slice(0, 40)] = s;
+  }
+  return out;
+}
+
+export async function getCustomer(env, websiteId, sessionId) {
+  try {
+    const meta = await crisp(env, "GET", `/website/${websiteId}/conversation/${sessionId}/meta`);
+    const nick = String(meta?.nickname || "").trim();
+    return cleanCustomer(meta?.data, nick && !/^visitor\d*$/i.test(nick) ? { name: nick } : {});
+  } catch (e) {
+    console.warn("[crisp] Không đọc được thông tin khách:", e?.message || e);
+    return {};
+  }
+}
+
 export async function getSegments(env, websiteId, sessionId) {
   const meta = await crisp(env, "GET", `/website/${websiteId}/conversation/${sessionId}/meta`);
   return meta?.segments || [];

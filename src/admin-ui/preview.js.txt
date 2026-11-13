@@ -60,6 +60,16 @@ export function pvRender() {
   log.scrollTop = log.scrollHeight;
 }
 
+// "key: value" lines from the Customer data box → { key: value }
+function pvCustomer() {
+  const out = {};
+  for (const line of ($("#pvCust")?.value || "").split("\n")) {
+    const i = line.indexOf(":");
+    if (i > 0 && line.slice(i + 1).trim()) out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return out;
+}
+
 export async function pvAsk(text) {
   text = String(text || "").trim();
   if (!text || P.busy) return;
@@ -69,7 +79,7 @@ export async function pvAsk(text) {
   pvRender();
   try {
     const history = P.msgs.filter((m) => m.role === "user" || m.role === "assistant").map((m) => ({ role: m.role, content: m.content }));
-    const r = await api("/api/test", { messages: history, handedOff: $("#pvHand").checked });
+    const r = await api("/api/test", { messages: history, handedOff: $("#pvHand").checked, customer: pvCustomer() });
     P.msgs.push({ role: "assistant", content: r.reply, meta: r, q: text });
     if (r.action === "handoff") $("#pvHand").checked = true;
   } catch (e) {
@@ -107,6 +117,13 @@ A.pvFb = (el) => {
 
 export function initPreview() {
   const ta = $("#pvText");
+  const cust = $("#pvCust");
+  const count = () => {
+    const k = Object.keys(pvCustomer()).length;
+    $("#pvCustN").textContent = k ? `(${k})` : "";
+  };
+  cust.addEventListener("input", count);
+  count();
   $("#pvForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = ta.value;

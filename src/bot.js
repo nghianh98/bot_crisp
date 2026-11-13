@@ -2,7 +2,7 @@
 // Luồng trả lời khách: nhận sự kiện từ Crisp, quyết định trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến.
 import { classify, generateReply } from "./ai.js";
 import { AI_FALLBACK_REPLY, FEEDBACK_ID, cfg, currentMode } from "./config.js";
-import { compose, crisp, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
+import { compose, crisp, getCustomer, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
 import { scheduleAfterReply, scheduleFollowup, unscheduleFollowup } from "./followup.js";
 import { handoffNote } from "./handoff.js";
 import { clearState, getState, setState } from "./state.js";
@@ -105,10 +105,11 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   if (feedbackNo && history.at(-1)?.role !== "user") history = [...history, { role: "user", content: env.__fu.noLabel }];
   if (!history.length) return;
 
-  await compose(env, websiteId, sessionId, true);
+  // Bật "đang soạn" + đọc thông tin khách app đã gửi vào Crisp (store domain, plan…) để bot không hỏi lại
+  const [customer] = await Promise.all([getCustomer(env, websiteId, sessionId), compose(env, websiteId, sessionId, true)]);
   let r;
   try {
-    r = await generateReply(env, history, { handedOff });
+    r = await generateReply(env, history, { handedOff, customer });
   } catch (e) {
     console.error("[ai] Lỗi OpenAI:", e?.message || e);
     if (handedOff || state === "failed") {
