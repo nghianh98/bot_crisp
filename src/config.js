@@ -85,6 +85,7 @@ export const ESCALATION_DEFAULT = {
   askInfo: true,
   fields: ["storeUrl", "issue", "theme", "tried", "screenshot"],
   cooldownMin: 2,
+  note: true, // để lại ghi chú bàn giao (private note) cho team khi chuyển người, xem handoff.js
 };
 
 export const FOLLOWUP_DEFAULT = {
@@ -169,6 +170,7 @@ export function normEscalation(x) {
     askInfo: typeof x.askInfo === "boolean" ? x.askInfo : d.askInfo,
     fields: Array.isArray(x.fields) ? Object.keys(INFO_FIELDS).filter((f) => x.fields.includes(f)) : [...d.fields],
     cooldownMin: num(x.cooldownMin, 0, 120, d.cooldownMin),
+    note: typeof x.note === "boolean" ? x.note : d.note,
   };
 }
 

@@ -39,6 +39,13 @@ export function sendMessage(env, websiteId, sessionId, content) {
   });
 }
 
+// Private note: chỉ team thấy trong inbox Crisp, khách không thấy
+export function sendNote(env, websiteId, sessionId, content) {
+  return crisp(env, "POST", `/website/${websiteId}/conversation/${sessionId}/message`, {
+    type: "note", from: "operator", origin: "chat", content, automated: true, user: botUser(env),
+  });
+}
+
 export function sendFeedbackPicker(env, websiteId, sessionId) {
   const fu = env.__fu;
   return crisp(env, "POST", `/website/${websiteId}/conversation/${sessionId}/message`, {

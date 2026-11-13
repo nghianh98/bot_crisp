@@ -39,6 +39,7 @@ function botMsg(m, i) {
   if (r) {
     h += `<div class="trace"><div class="chips">${chipsFor({ act: r.action, cat: r.category, urg: r.urgent, gap: r.knowledge_gap })}</div>
 <div>Sources: ${srcLinks(r.sources)}</div>
+${r.teamNote ? `<details class="tnote" open><summary>Note for the team (only the team sees it)</summary><pre>${esc(r.teamNote)}</pre></details>` : ""}
 <div><button type="button" class="lk" data-act="pvImprove" data-i="${i}">Improve this answer</button> <span class="muted">${(r.ms / 1000).toFixed(1)} s</span></div></div>`;
   } else if (m.note) {
     h += `<div class="trace"><div>${esc(m.note)}</div></div>`;

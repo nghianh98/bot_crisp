@@ -12,6 +12,7 @@ CÂY THƯ MỤC
 worker.js           Cổng vào: nhận webhook của Crisp, mở trang /admin, chạy cron mỗi phút
 bot.js              Luồng trả lời khách: trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến
 ai.js               Soạn prompt, gọi OpenAI, chọn tag
+handoff.js          Ghi chú bàn giao: private note cho team khi bot chuyển khách (bật/tắt ở Escalation)
 followup.js         Nhắc khách khi im lặng, kết thúc ca, tự Resolve
 knowledge.js        Sync help center và trang website (nút Sync now, tự động theo lịch)
 training.js         Snippet và hướng dẫn do team viết

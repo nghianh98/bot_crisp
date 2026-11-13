@@ -1,23 +1,32 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // AI: soạn prompt từ kiến thức và hướng dẫn, gọi OpenAI, chọn tag cho hội thoại.
 import { GUIDANCE_CATS, INFO_FIELDS, TRIGGERS, cfg, effortLevel } from "./config.js";
+import { BRIEF_RULE, BRIEF_SCHEMA, briefOn } from "./handoff.js";
 import { tagKeys } from "./tags.js";
 import { teamAvailabilityNote } from "./time.js";
 import { getTraining } from "./training.js";
 
-export const replySchema = (keys) => ({
-  type: "object",
-  additionalProperties: false,
-  required: ["reply", "action", "category", "knowledge_gap", "urgent", "sources"],
-  properties: {
-    reply: { type: "string", description: "Message to send to the customer" },
-    action: { type: "string", enum: ["answer", "ask_info", "handoff"] },
-    category: { type: "string", enum: keys },
-    knowledge_gap: { type: "boolean", description: "true if the snippets and help center do not cover the customer's question" },
-    urgent: { type: "boolean", description: "true if the customer is angry or upset, threatens a bad review, report, chargeback or uninstall, or their storefront/checkout is broken" },
-    sources: { type: "array", items: { type: "string" }, description: "ids of the snippets and urls of the articles used for this reply" },
-  },
-});
+// brief = true: thêm field handoff_brief (ghi chú bàn giao cho team, xem handoff.js)
+export const replySchema = (keys, { brief = false } = {}) => {
+  const s = {
+    type: "object",
+    additionalProperties: false,
+    required: ["reply", "action", "category", "knowledge_gap", "urgent", "sources"],
+    properties: {
+      reply: { type: "string", description: "Message to send to the customer" },
+      action: { type: "string", enum: ["answer", "ask_info", "handoff"] },
+      category: { type: "string", enum: keys },
+      knowledge_gap: { type: "boolean", description: "true if the snippets and help center do not cover the customer's question" },
+      urgent: { type: "boolean", description: "true if the customer is angry or upset, threatens a bad review, report, chargeback or uninstall, or their storefront/checkout is broken" },
+      sources: { type: "array", items: { type: "string" }, description: "ids of the snippets and urls of the articles used for this reply" },
+    },
+  };
+  if (brief) {
+    s.required.push("handoff_brief");
+    s.properties.handoff_brief = BRIEF_SCHEMA;
+  }
+  return s;
+};
 
 export const tagList = (env) => env.__tags.items.filter((t) => t.enabled).map((t) => `- ${t.key}: ${t.desc.replace(/\s+/g, " ")}`).join("\n");
 
@@ -49,6 +58,7 @@ export function actionRules(env) {
     '- "urgent": true when the customer is angry or upset, swears, threatens a bad review, a report, a chargeback or to uninstall, or says their storefront or checkout is broken.',
     '- "sources": the id of every snippet and the url of every article you used for this reply (empty list if none).'
   );
+  if (briefOn(env)) lines.push(BRIEF_RULE);
   return lines.join("\n");
 }
 
@@ -196,7 +206,7 @@ export async function generateReply(env, history, { handedOff = false } = {}) {
     instructions: handedOff ? `${base}\n\n${HANDED_OFF_NOTE}` : base,
     input: history.map((h) => ({ role: h.role, content: h.content })),
     schemaName: "support_reply",
-    schema: replySchema(tagKeys(env)),
+    schema: replySchema(tagKeys(env), { brief: briefOn(env) }),
   };
   const started = Date.now();
   const effort = effortLevel(env);

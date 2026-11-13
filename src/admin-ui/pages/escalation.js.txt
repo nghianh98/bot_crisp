@@ -16,6 +16,8 @@ R.escalation = () => {
 <div class="checks" id="fields">${Object.entries(M.infoFields)
     .map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}" ${E.fields.includes(k) ? "checked" : ""} ${E.askInfo ? "" : "disabled"}> ${esc(l)}</label>`)
     .join("")}</div></div></div></div></section>
+<section class="sec"><h2>Note for the team</h2><div class="rows"><div class="row">${sw(E.note, "escFlip", `data-k="note"`, "Leave a note for the team")}
+<div class="grow"><p class="t">Leave a private note when handing off</p><p class="sub">The bot adds a short brief to the conversation in Crisp: why it needs a person, what the customer needs, the details they gave, what's still missing and what to do first. Only the team sees it, never the customer. Try it in Test the bot.</p></div></div></div></section>
 <section class="sec"><h2>While the customer waits for the team</h2><div class="rows">
 <div class="row"><div class="grow"><p class="t">The customer keeps messaging</p><p class="sub">The bot reassures them and says when the team will reply, at most once every
 <select class="in inl" id="cd" aria-label="Minutes between reassurance messages">${[1, 2, 5, 10, 30].map((v) => `<option value="${v}" ${E.cooldownMin === v ? "selected" : ""}>${v} min</option>`).join("")}</select>.</p></div></div>
@@ -39,6 +41,7 @@ A.escSave = (el) =>
       askInfo: val("askInfo"),
       fields: $$("#fields input:checked").map((i) => i.value),
       cooldownMin: +$("#cd").value,
+      note: val("note"),
     };
     const r = await api("/api/settings", { escalation });
     Object.assign(S, r);

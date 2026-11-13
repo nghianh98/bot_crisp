@@ -2,8 +2,9 @@
 // Luồng trả lời khách: nhận sự kiện từ Crisp, quyết định trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến.
 import { classify, generateReply } from "./ai.js";
 import { AI_FALLBACK_REPLY, FEEDBACK_ID, cfg, currentMode } from "./config.js";
-import { compose, crisp, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, updateSegments } from "./crisp.js";
+import { compose, crisp, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
 import { scheduleAfterReply, scheduleFollowup, unscheduleFollowup } from "./followup.js";
+import { handoffNote } from "./handoff.js";
 import { clearState, getState, setState } from "./state.js";
 import { appendLog, markLog, recordStats } from "./stats.js";
 import { tagKeys, tagName, tagOfSegment } from "./tags.js";
@@ -148,6 +149,10 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   if (add.length) await updateSegments(env, websiteId, sessionId, { add, current: segNow });
 
   const question = history.filter((h) => h.role === "user").slice(-1)[0]?.content || "";
+  // Vừa chuyển người → để lại ghi chú bàn giao cho team (private note, khách không thấy)
+  if (newHandoff && env.__esc.note) {
+    await sendNote(env, websiteId, sessionId, handoffNote(env, r, question)).catch((e) => console.warn("[handoff] Không gửi được note:", e?.message || e));
+  }
   await recordStats(env, (s, day) => {
     const b = s.bot;
     b.answers++;

@@ -2,6 +2,7 @@
 // API của trang quản trị (/api/*): trang /admin gọi vào đây để đọc và lưu dữ liệu.
 import { isAdmin, whoOf } from "./auth.js";
 import { callOpenAI, generateReply } from "../ai.js";
+import { handoffNote } from "../handoff.js";
 import { AI_FALLBACK_REPLY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_LABELS, QUEUE, SETTINGS_FIELDS, TRIGGERS, applySettings, cfg, currentMode, effortLevel, normEscalation, normFollowup, withConfig } from "../config.js";
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
@@ -361,7 +362,9 @@ export async function apiTest(env, body) {
   }
   const fu = env.__fu;
   const feedback = r.action === "answer" && !body.handedOff && !r.urgent && !r.knowledge_gap && fu.feedback ? { text: fu.feedbackText, yes: fu.yesLabel, no: fu.noLabel, thanks: fu.thanksText } : null;
-  return { ...r, feedback, ms: Date.now() - t0 };
+  // Đúng note team sẽ thấy trong Crisp khi bot vừa chuyển người (bot.js → handoffNote)
+  const teamNote = r.action === "handoff" && !body.handedOff && env.__esc.note ? handoffNote(env, r, msgs.at(-1).content) : null;
+  return { ...r, feedback, teamNote, ms: Date.now() - t0 };
 }
 
 export async function apiAnalytics(env, month) {
