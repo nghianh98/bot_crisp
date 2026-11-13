@@ -23,6 +23,7 @@
     "enabled": true,
     "head_sampling_rate": 1,
     "redact_query_string": false,
+    "issues": { "enabled": true }, // tab Issues trên dashboard (gom lỗi); đang bật trên Cloudflare, giữ cho khớp
     "logs": {
       "enabled": true,
       "head_sampling_rate": 1,
