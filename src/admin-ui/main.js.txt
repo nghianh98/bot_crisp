@@ -22,6 +22,7 @@ function renderSide() {
   const S = store.S;
   const s = S.settings;
   $("#botName").textContent = s.botName;
+  document.title = `${s.botName} Admin`;
   $(".top-name").textContent = s.botName;
   $$(".mark, .fab .av").forEach((el) => (el.textContent = (s.botName || "T").trim().charAt(0).toUpperCase()));
   $("#modeSel").value = s.mode;

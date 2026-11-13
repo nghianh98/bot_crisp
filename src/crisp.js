@@ -19,7 +19,7 @@ export async function crisp(env, method, path, body) {
   const auth = btoa(`${env.CRISP_IDENTIFIER}:${env.CRISP_KEY}`);
   const res = await fetch(`${cfg(env, "CRISP_API_BASE")}/v1${path}`, {
     method,
-    headers: { Authorization: `Basic ${auth}`, "X-Crisp-Tier": "plugin", "Content-Type": "application/json", "User-Agent": "TranstoreBot/2.0" },
+    headers: { Authorization: `Basic ${auth}`, "X-Crisp-Tier": "plugin", "Content-Type": "application/json", "User-Agent": "SupportBot/2.0" },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));

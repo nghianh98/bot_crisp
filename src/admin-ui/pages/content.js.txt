@@ -59,7 +59,7 @@ R.content = () => {
 <button type="button" class="btn sm" data-act="syncAll" id="syncBtn" ${syncing ? "disabled" : ""}>${syncing ? "Syncing…" : running ? "Continue sync" : "Sync now"}</button></div></div>
 <table class="tbl"><thead><tr><th>Source</th><th class="num">In use</th><th class="hide-sm">Updated</th></tr></thead><tbody>
 ${srcRow("snippets", "Snippets", "Questions and answers written by the team", sn.filter((x) => x.enabled).length, sn.length, sn.length ? ago(lastSn) : "never")}
-${srcRow("help", "Help center", `${esc(host(S.kb.helpUrl))}, ${EVERY[S.kb.autoSync]}`, help.filter((a) => !a.off).length, help.length, ago(synced))}
+${srcRow("help", "Help center", S.kb.helpUrl ? `${esc(host(S.kb.helpUrl))}, ${EVERY[S.kb.autoSync]}` : `Not set yet: add the link in <a href="#settings">Settings → Product</a>`, help.filter((a) => !a.off).length, help.length, ago(synced))}
 ${srcRow("web", "Website pages", `Pages outside the help center, like pricing; ${EVERY[S.kb.autoSync]}`, web.filter((a) => !a.off).length, web.length, web.length ? ago(synced) : "never")}
 </tbody></table><div id="syncNote">${syncNote()}</div></section>
 <section class="sec" id="srcList">
@@ -202,7 +202,7 @@ A.snipImport = () =>
 <textarea class="in" id="imp" rows="12" placeholder="Q: Do you offer free setup?
 A: Yes. Send us your store URL and the team sets it up within 24 working hours.
 
-Q: Does Transtore translate checkout?
+Q: Does the app work with my theme?
 A: …"></textarea>`,
     `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="snipImportGo">Import</button>`,
     { onOpen: (d) => d.querySelector("#imp").focus() }
@@ -245,7 +245,7 @@ A.webAdd = () =>
   modal(
     "Add website page",
     `<p class="hint">The bot reads the text on this page and syncs it together with the help center. Good for pricing or feature pages, up to 20 pages.</p>
-<label class="fl" for="wu">Page link</label><input class="in" id="wu" type="url" placeholder="https://transtore.app/pricing">`,
+<label class="fl" for="wu">Page link</label><input class="in" id="wu" type="url" placeholder="https://example.com/pricing">`,
     `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="webAddGo">Add page</button>`,
     { onOpen: (d) => d.querySelector("#wu").focus() }
   );

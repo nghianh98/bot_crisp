@@ -5,6 +5,7 @@ import { BRIEF_RULE, BRIEF_SCHEMA, briefOn } from "./handoff.js";
 import { tagKeys } from "./tags.js";
 import { teamAvailabilityNote } from "./time.js";
 import { getTraining } from "./training.js";
+import { UserError } from "./util.js";
 
 // brief = true: thêm field handoff_brief (ghi chú bàn giao cho team, xem handoff.js)
 export const replySchema = (keys, { brief = false } = {}) => {
@@ -67,16 +68,19 @@ export async function buildInstructions(env) {
   const email = cfg(env, "SUPPORT_EMAIL");
   const fu = env.__fu;
 
-  let s = `You are ${cfg(env, "BOT_NAME")}, the support assistant of Transtore, a Shopify app (store translation, multi-currency, geolocation). Customers are Shopify merchants. Help center: ${cfg(env, "HELP_CENTER_URL")}.
+  const product = cfg(env, "PRODUCT_NAME");
+  const about = cfg(env, "PRODUCT_DESC");
+  const helpUrl = cfg(env, "HELP_CENTER_URL");
+  let s = `You are ${cfg(env, "BOT_NAME")}, the support assistant of ${product}.${about ? `\n\nAbout ${product} (from the ${product} team):\n${about}` : ""}${helpUrl ? `\n\nHelp center: ${helpUrl}.` : ""}
 
 Answering:
 - ${/^auto$/i.test(cfg(env, "BOT_LANGUAGE")) ? "Reply in the customer's language." : `Always reply in ${cfg(env, "BOT_LANGUAGE")}, whatever language the customer writes in.`} Warm, human, to the point, like a helpful support agent in a chat window.
-- Use ONLY the team snippets and the help center articles below. Snippets are written by the Transtore team: if a snippet and an article disagree, the snippet wins.
+- Use ONLY the team snippets and the help center articles below. Snippets are written by the ${product} team: if a snippet and an article disagree, the snippet wins.
 - Never invent features, prices, plans, steps or links.
 - Answer only what was asked. Do not add extra facts, limits or tips the customer did not ask about.
 
 Team snippets (they come before every other rule):
-- A snippet is a ready-made answer the Transtore team wrote for a question customers ask.
+- A snippet is a ready-made answer the ${product} team wrote for a question customers ask.
 - If the customer's latest message asks the same thing as a snippet's Q (same intent, even in other words, with typos or in another language: "t muốn gỡ app" = "I want to uninstall the app"), the reply IS that snippet's A, sent as written: keep its wording, tone, length, steps and line breaks. Only translate it if you reply in another language, and drop a sentence only if it plainly no longer fits (for example, it asks something the customer already answered).
 - For that reply, the formatting rules, the word limit, the tone guidance and the length rule for upset customers below do NOT apply. Whatever action you choose, the reply text stays the snippet's A. Put the snippet id in "sources".
 - If several snippets fit, use the one closest to the customer's message.
@@ -90,25 +94,25 @@ Formatting (the chat widget shows plain text with line breaks; markdown is NOT r
 - No markdown symbols (no **, no #, no tables, no bullet "-" or "*"). No closing questions like "Anything else?" unless the conversation needs one.
 - Keep the whole reply under about 80 words, unless the steps really need more.
 
-Example of a good reply:
-You can add languages from the Language page in Transtore.
+Example of a good reply (the format only; the product and steps here are made up):
+You can turn on email alerts from the Notifications page.
 
-1. Open Transtore in your Shopify admin.
-2. Go to Language > Add target language.
-3. Select the languages and click Add.
-4. Turn on the Status toggle to publish each one.
+1. Open the app and go to Settings > Notifications.
+2. Turn on Email alerts.
+3. Enter the address that should receive them.
+4. Click Save.
 
-Full guide: https://help.transtore.app/docs/...
+Full guide: https://help.example.com/docs/email-alerts
 
 Other rules:
-- Shopify context: refer to Shopify admin menus exactly as written in the articles (Online Store > Themes > Customize > App embeds, etc.).
-- Never ask for passwords, staff account logins, API keys or card details. If the team needs store access, say a teammate will send a collaborator request.`;
+- Refer to menus, pages and buttons exactly as written in the articles.
+- Never ask for passwords, logins, API keys or card details. If the team needs access to the customer's account, say a teammate will follow up on how to give access.`;
 
   if (fu.feedback) s += `\n- If the customer's last message is "${fu.noLabel}" (they tapped a button saying your previous answer did not help): apologise in a few words and ask one short question about what is still not working, or follow the hand-off rules if the issue needs a human.`;
 
   const active = (guidance || []).filter((g) => g.enabled && g.text);
   if (active.length) {
-    s += "\n\nGuidance from the Transtore support team (always follow it, unless it conflicts with the snippet, formatting or safety rules above; a matching snippet is sent as written):";
+    s += `\n\nGuidance from the ${product} support team (always follow it, unless it conflicts with the snippet, formatting or safety rules above; a matching snippet is sent as written):`;
     for (const [cat, c] of Object.entries(GUIDANCE_CATS)) {
       const items = active.filter((g) => g.cat === cat);
       if (items.length) s += `\n${c.prompt}:\n${items.map((g) => `- ${g.text.replace(/\n+/g, "\n  ")}`).join("\n")}`;
@@ -127,7 +131,7 @@ Upset or angry customers:
   const sn = (snippets || []).filter((x) => x.enabled && x.a);
   if (sn.length) s += `\n\n<snippets>\n${sn.map((x) => `<snippet id="${x.id}">\nQ: ${x.q}\nA: ${x.a}\n</snippet>`).join("\n")}\n</snippets>`;
   // Cloudflare che email trên help center thành "[email protected]" → thay bằng SUPPORT_EMAIL
-  const kbText = kb?.trim() ? kb.replace(/\[email[\s ]*protected\]/gi, email || "the Transtore support email") : "";
+  const kbText = kb?.trim() ? kb.replace(/\[email[\s ]*protected\]/gi, email || `the ${product} support email`) : "";
   s += kbText ? `\n\n<help_center>\n${kbText}\n</help_center>` : "\n\nNo help center articles are loaded yet.";
   const team = teamAvailabilityNote(env); // phần thay đổi theo giờ để ở cuối, giữ prompt cache cho phần trên
   if (team) s += `\n\n${team}`;
@@ -232,9 +236,35 @@ export async function generateReply(env, history, { handedOff = false } = {}) {
   return r;
 }
 
+// "Transtore (Transtore is a Shopify app for …)": tên + câu đầu của phần mô tả sản phẩm, dùng cho các prompt phụ
+export function productLine(env) {
+  const name = cfg(env, "PRODUCT_NAME");
+  const first = (cfg(env, "PRODUCT_DESC") || "").split(/(?<=[.!?])\s/)[0].trim();
+  return first ? `${name} (${first.replace(/[.!?]$/, "")})` : name;
+}
+
+// Các model OpenAI mà khoá này dùng được, mới nhất trước. Bỏ model không phải để chat (embedding, ảnh, giọng nói, kiểm duyệt…).
+const NOT_CHAT = /(embed|moderation|tts|whisper|dall-e|image|audio|realtime|transcribe|sora|babbage|davinci|search|computer-use|speech)/i;
+
+export async function listModels(env, key) {
+  let res;
+  try {
+    res = await fetch(`${cfg(env, "OPENAI_BASE_URL")}/v1/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+  } catch (e) {
+    throw Object.assign(new UserError(`Couldn't reach OpenAI (${e?.message || e})`), { status: 0 });
+  }
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw Object.assign(new UserError("OpenAI didn't accept this key. Check that you copied the whole key and that it hasn't been deleted."), { status: 401 });
+  if (!res.ok) throw Object.assign(new UserError(`OpenAI ${res.status}: ${data?.error?.message || "unknown error"}`), { status: res.status });
+  return (data.data || [])
+    .filter((m) => typeof m?.id === "string" && !NOT_CHAT.test(m.id))
+    .sort((a, b) => (b.created || 0) - (a.created || 0) || a.id.localeCompare(b.id))
+    .map((m) => ({ id: m.id, created: m.created || 0 }));
+}
+
 export async function classify(env, transcript) {
   const r = await callOpenAI(env, {
-    instructions: `Classify this Shopify app support conversation for Transtore (translation, currency, geolocation app) into the one tag that fits best:\n${tagList(env)}`,
+    instructions: `Classify this support conversation for ${productLine(env)} into the one tag that fits best:\n${tagList(env)}`,
     input: [{ role: "user", content: transcript }],
     schemaName: "classification",
     schema: { type: "object", additionalProperties: false, required: ["category"], properties: { category: { type: "string", enum: tagKeys(env) } } },

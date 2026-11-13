@@ -1,28 +1,44 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // Kiến thức của bot: sync help center và trang website vào KV (bấm Sync now trên /admin hoặc tự động theo lịch).
-import { cfg } from "./config.js";
+import { cfg, withConfig } from "./config.js";
 import { getJSON, hash, list, putJSON, sleep } from "./util.js";
 
+const UA = { "User-Agent": "SupportBot-KB/2.0" };
+
+// Bài help center lấy từ sitemap.xml của trang (có hỗ trợ sitemap index). Chưa điền link help center → không có bài nào.
 export async function listHelpCenterUrls(env) {
-  const base = cfg(env, "HELP_CENTER_URL").replace(/\/$/, "");
-  const sections = list(cfg(env, "HELP_CENTER_SECTIONS"));
-  const res = await fetch(`${base}/sitemap.xml`, { headers: { "User-Agent": "TranstoreBot-KB/2.0" } });
-  if (!res.ok) throw new Error(`sitemap ${res.status}`);
-  const xml = await res.text();
+  const raw = cfg(env, "HELP_CENTER_URL");
+  if (!raw) return [];
+  const base = raw.replace(/\/$/, "");
+  const sections = list(cfg(env, "HELP_CENTER_SECTIONS")).map((s) => s.replace(/^\/|\/$/g, "")).filter(Boolean);
   const origin = new URL(base).origin;
+  const read = async (url) => {
+    const res = await fetch(url, { headers: UA });
+    if (!res.ok) throw new Error(`sitemap ${res.status}`);
+    return [...(await res.text()).matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+  };
+  let locs = await read(`${base}/sitemap.xml`);
+  const subs = locs.filter((l) => /\.xml(\?|$)/i.test(l)).slice(0, 10); // sitemap index → đọc các sitemap con
+  if (subs.length) locs = [...locs.filter((l) => !subs.includes(l)), ...(await Promise.all(subs.map((s) => read(s).catch(() => [])))).flat()];
   const urls = new Set();
-  for (const m of xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) {
+  for (const loc of locs) {
     try {
-      const u = new URL(m[1]);
+      const u = new URL(loc);
       if (u.origin !== origin) continue;
-      if (!sections.some((s) => u.pathname.startsWith(`/${s}/`))) continue;
+      if (sections.length && !sections.some((s) => u.pathname.startsWith(`/${s}/`))) continue;
       urls.add(origin + u.pathname);
     } catch {}
   }
   return [...urls].sort();
 }
 
-export const helpOrigin = (env) => new URL(cfg(env, "HELP_CENTER_URL")).origin;
+export const helpOrigin = (env) => {
+  try {
+    return new URL(cfg(env, "HELP_CENTER_URL")).origin;
+  } catch {
+    return null; // chưa có help center
+  }
+};
 
 // Bài help center: page:/docs/… ; trang website: page:https://…
 export function pageKey(env, url) {
@@ -48,29 +64,28 @@ export const cleanText = (s) =>
     .replace(/\u200b/g, "").replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 
 export async function extractPage(env, url) {
-  const res = await fetch(url, { headers: { "User-Agent": "TranstoreBot-KB/2.0" } });
+  const res = await fetch(url, { headers: UA });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
   let title = "", main = "", article = "", body = "", skip = 0;
   const blocks = { h1: "\n# ", h2: "\n## ", h3: "\n### ", h4: "\n### ", li: "\n- ", p: "\n", td: " | ", th: " | ", tr: "\n", pre: "\n", blockquote: "\n" };
   const rw = new HTMLRewriter().on("title", { text: (t) => void (title += t.text) });
   if (new URL(url).origin === helpOrigin(env)) {
-    // Help center Docusaurus: chỉ lấy phần nội dung bài
+    // Help center: ưu tiên phần nội dung bài (Docusaurus .theme-doc-markdown, rồi thẻ article); không có thì lấy cả trang như dưới
     for (const [tag, prefix] of Object.entries(blocks)) {
       rw.on(`.theme-doc-markdown ${tag}`, { element: () => void (main += prefix) });
       rw.on(`article ${tag}`, { element: () => void (article += prefix) });
     }
     rw.on(".theme-doc-markdown", { text: (t) => void (main += t.text) });
     rw.on("article", { text: (t) => void (article += t.text) });
-  } else {
-    // Trang website bất kỳ: lấy chữ trong body, bỏ menu, footer, script
-    rw.on("script,style,noscript,svg,nav,footer,form,iframe,template", {
-      element(el) {
-        try { el.onEndTag(() => void skip--); skip++; } catch {}
-      },
-    });
-    for (const [tag, prefix] of Object.entries({ ...blocks, div: "\n", section: "\n", br: "\n" })) rw.on(`body ${tag}`, { element: () => void (body += prefix) });
-    rw.on("body", { text: (t) => void (skip ? 0 : (body += t.text)) });
   }
+  // Trang website bất kỳ: lấy chữ trong body, bỏ menu, footer, script
+  rw.on("script,style,noscript,svg,nav,footer,form,iframe,template", {
+    element(el) {
+      try { el.onEndTag(() => void skip--); skip++; } catch {}
+    },
+  });
+  for (const [tag, prefix] of Object.entries({ ...blocks, div: "\n", section: "\n", br: "\n" })) rw.on(`body ${tag}`, { element: () => void (body += prefix) });
+  rw.on("body", { text: (t) => void (skip ? 0 : (body += t.text)) });
   await rw.transform(res).arrayBuffer();
   const text = (cleanText(main) || cleanText(article) || cleanText(body)).slice(0, 30000);
   const h1 = text.match(/^# (.+)$/m)?.[1];
@@ -114,7 +129,7 @@ async function saveSync(env, st, prevWrite) {
 export async function newSyncJob(env, kbCfg, by) {
   if (!env.KB) throw new Error("The KV binding KB is missing");
   const help = await listHelpCenterUrls(env);
-  if (!help.length) throw new Error("the help center sitemap lists no articles");
+  if (cfg(env, "HELP_CENTER_URL") && !help.length) throw new Error("the help center sitemap lists no articles");
   const urls = [...help, ...(kbCfg?.web || [])];
   const now = Date.now();
   return { urls, i: 0, updated: 0, failed: [], by: by || null, started: now, touched: now };
@@ -176,10 +191,11 @@ export async function cronSync(env) {
     }
   } else if (st.job) {
     if (now - st.job.touched < DRIVEN_MS) return;
-    return stepSync(env, st);
+    return stepSync(await withConfig(env), st); // cần cài đặt trên /admin (link help center) để đặt đúng tên bài
   } else if (!st.next || now < st.next) {
     return;
   }
+  env = await withConfig(env); // link help center + section điền trên /admin: thiếu bước này cron tưởng chưa có help center và xoá hết bài
   kbCfg ||= (await getJSON(env, "cfg:kb")) || {};
   try {
     st.job = await newSyncJob(env, kbCfg, null);

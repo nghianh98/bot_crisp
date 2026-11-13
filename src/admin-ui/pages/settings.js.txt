@@ -52,6 +52,12 @@ R.settings = () => {
 ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<option value="${esc(s.language)}" selected>${esc(s.language)}</option>` : ""}</select></div>
 <div class="fr"><div class="lb">Mode</div><div class="radios">${MODES.map(([v, t, d]) => `<label class="radio"><input type="radio" name="mode" value="${v}" ${s.mode === v ? "checked" : ""}><div><b>${t}</b><span>${d}</span></div></label>`).join("")}</div></div>
 </div></section>
+<section class="sec"><h2>Product</h2><div class="form">
+<div class="fr"><label for="pn">Product name<small>The app or service the bot supports</small>${src("product")}</label><input class="in" id="pn" value="${esc(s.product === "our product" ? "" : s.product)}" maxlength="60" placeholder="My App"></div>
+<div class="fr"><label for="pd">About the product<small>What it does and who the customers are, plus anything the bot must always know. The bot reads this before every reply.</small>${src("productDesc")}</label><textarea class="in" id="pd" rows="4" maxlength="1000" placeholder="My App is a Shopify app that … Customers are Shopify merchants.">${esc(s.productDesc)}</textarea></div>
+<div class="fr"><label for="hu">Help center link<small>The bot reads every article listed in its sitemap.xml. Leave empty if you don't have one yet.</small>${src("helpUrl")}</label><input class="in" id="hu" type="url" value="${esc(s.helpUrl)}" maxlength="200" placeholder="https://help.example.com"></div>
+<div class="fr"><label for="hs">Help center sections<small>Only read articles under these paths, separated by commas (for example docs,faq). Leave empty to read the whole site.</small>${src("helpSections")}</label><input class="in" id="hs" value="${esc(s.helpSections)}" maxlength="200" placeholder="docs,faq"></div>
+</div></section>
 <section class="sec"><h2>Support team</h2><div class="form">
 <div class="fr"><div class="lb">Working hours<small>Vietnam time (GMT+${S.meta.utcOffset}). Outside these hours the bot tells customers when the team is back.</small>${src("businessHours")}</div><div>
 <div class="days" role="group" aria-label="Working days">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${bh.days.has(i) ? "checked" : ""}><span>${d}</span></label>`).join("")}</div>
@@ -60,15 +66,17 @@ ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<o
 <div class="fr"><label for="em">Support email<small>The bot suggests this email when it hands off</small>${src("supportEmail")}</label><input class="in" id="em" type="email" value="${esc(s.supportEmail)}" maxlength="120" placeholder="support@…"></div>
 </div></section>
 <section class="sec"><h2>AI</h2><div class="form">
-<div class="fr"><label for="md">OpenAI model${src("model")}</label><div><input class="in" id="md" value="${esc(s.model)}" list="models" maxlength="60" style="max-width:280px"><datalist id="models"><option value="gpt-6-luna"><option value="gpt-6.1-terra"></datalist>
-<p class="meta">gpt-6-luna is cheap and fast. Stronger models give more thorough answers but cost more.</p></div></div>
+<div class="fr"><label for="ak">OpenAI API key<small>Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. It's checked with OpenAI before saving and is never shown again in full.</small></label><div>
+<p class="meta" style="margin:0 0 8px">${keyStatus(S.ai)}</p>
+<div class="copy"><input class="in" id="ak" type="password" autocomplete="off" spellcheck="false" maxlength="300" placeholder="${S.ai?.from ? "Paste a new key to replace it" : "sk-…"}"><button type="button" class="btn" data-act="aiKeySave">Save key</button></div></div></div>
+<div class="fr"><label for="md">OpenAI model<small>Only models your key can use are listed. Click Save settings to switch.</small>${src("model")}</label><div id="mdBox">${modelBox()}</div></div>
 <div class="fr"><label for="ef">Reasoning effort</label><select class="in" id="ef" style="width:auto">${[["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"], ["high", "High"]].map(([v, l]) => `<option value="${v}" ${s.effort === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
 </div></section>
 <div class="savebar"><p class="meta">You can also switch the bot mode quickly in the box on the left.</p><button type="button" class="btn pri" data-act="setSave">Save settings</button></div>
 
 <section class="sec"><h2>Crisp connection</h2><div class="form">
-<div class="fr"><label for="wh">Webhook link<small>Paste into Crisp Marketplace → Transtore Bot → Settings → Events</small></label><div class="copy"><input class="in" id="wh" value="${esc(S.webhookUrl)}" readonly><button type="button" class="btn" data-act="copyHook">Copy</button></div></div>
-<div class="fr"><div class="lb">Secret keys<small>Set in Cloudflare → transtore-bot → Settings → Variables and secrets</small></div><div class="rows">${S.health
+<div class="fr"><label for="wh">Webhook link<small>Paste into Crisp Marketplace → your plugin → Settings → Events</small></label><div class="copy"><input class="in" id="wh" value="${esc(S.webhookUrl)}" readonly><button type="button" class="btn" data-act="copyHook">Copy</button></div></div>
+<div class="fr"><div class="lb">Secret keys<small>Crisp keys: Cloudflare → this Worker → Settings → Variables and secrets. OpenAI key: the AI section above.</small></div><div class="rows">${S.health
     .map((h) => `<div class="row"><span class="st ${h.ok ? "ok" : "bad"}" aria-hidden="true">${h.ok ? "✓" : "!"}</span><div class="grow"><p class="t">${esc(h.label)}</p><p class="sub">${esc(h.ok ? h.detail || "Set" : h.fix)}</p></div></div>`)
     .join("")}</div></div>
 </div></section>
@@ -85,6 +93,79 @@ ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<o
   showBH();
   $("#impf").onchange = (e) => importFile(e.target.files[0]);
   R.settings.bh = showBH;
+  if (S.ai?.from && !S.models) loadModels();
+};
+
+/* ------------------------------ OpenAI key + model ------------------------------ */
+
+function keyStatus(ai) {
+  if (ai?.from === "admin") {
+    const who = [ai.by && `by ${esc(ai.by)}`, ai.at && fmtTime(ai.at)].filter(Boolean).join(", ");
+    return `✓ Key saved here: <code>${esc(ai.hint)}</code>${who ? ` (${who})` : ""}. <button type="button" class="lk" data-act="aiKeyRemove">Remove</button>`;
+  }
+  if (ai?.from === "cloudflare") return `✓ Using <code>OPENAI_API_KEY</code> from Cloudflare (<code>${esc(ai.hint)}</code>). A key saved here replaces it.`;
+  return `<b style="color:var(--red)">No key yet.</b> The bot can't answer customers until you add one.`;
+}
+
+// S.models: null = not loaded, { loading }, { list: [{id}] }, { error }
+function modelBox() {
+  const S = store.S;
+  const cur = $("#md")?.value?.trim() || S.settings.model;
+  const M = S.models;
+  if (M?.list?.length) {
+    const ids = M.list.map((m) => m.id);
+    const other = ids.includes(cur) ? "" : `<option value="${esc(cur)}" selected>${esc(cur)} (not available for this key)</option>`;
+    return `<div class="copy" style="max-width:420px"><select class="in" id="md">${other}${ids.map((id) => `<option value="${esc(id)}" ${id === cur ? "selected" : ""}>${esc(id)}</option>`).join("")}</select><button type="button" class="btn" data-act="aiModels">Reload</button></div>
+<p class="meta">${ids.length} models this key can use, newest first. The bot needs one that supports the Responses API with structured output (most GPT models do).</p>`;
+  }
+  const note = M?.loading ? "Loading the models your key can use…" : M?.error ? esc(M.error) : S.ai?.from ? "" : "Add a key above to choose from the models it can use.";
+  return `<div class="copy" style="max-width:420px"><input class="in" id="md" value="${esc(cur)}" maxlength="60">${S.ai?.from && !M?.loading ? `<button type="button" class="btn" data-act="aiModels">Load models</button>` : ""}</div>${note ? `<p class="meta">${note}</p>` : ""}`;
+}
+
+function paintModels() {
+  const box = $("#mdBox");
+  if (box) box.innerHTML = modelBox();
+}
+
+async function loadModels() {
+  const S = store.S;
+  S.models = { loading: true };
+  paintModels();
+  try {
+    S.models = { list: (await api("/api/openai", { op: "models" })).models };
+  } catch (e) {
+    S.models = { error: `Couldn't load models: ${e.message}` };
+  }
+  paintModels();
+}
+
+A.aiModels = (el) => busy(el, loadModels);
+
+A.aiKeySave = (el) =>
+  busy(el, async () => {
+    const key = $("#ak").value.trim();
+    if (!key) throw new Error("Paste the key first");
+    const r = await api("/api/openai", { op: "saveKey", key });
+    const S = store.S;
+    Object.assign(S, await api("/api/state"));
+    S.models = r.models ? { list: r.models } : { error: r.warning };
+    R.settings();
+    toast(r.warning || "Key saved and checked with OpenAI");
+  });
+
+A.aiKeyRemove = async () => {
+  const S = store.S;
+  const text = S.ai?.cloudflare ? "The bot goes back to the OPENAI_API_KEY set in Cloudflare." : "No other key is set, so the bot stops answering customers until you add a key.";
+  if (!(await confirmBox("Remove the saved key?", text, "Remove", true))) return;
+  try {
+    await api("/api/openai", { op: "removeKey" });
+    Object.assign(S, await api("/api/state"));
+    S.models = null;
+    R.settings();
+    toast("Key removed");
+  } catch (e) {
+    toast(e.message, { err: true });
+  }
 };
 
 A.setSave = (el) =>
@@ -98,6 +179,10 @@ A.setSave = (el) =>
       mode: document.querySelector('input[name="mode"]:checked')?.value,
       businessHours: bh,
       supportEmail: $("#em").value.trim(),
+      product: $("#pn").value.trim(),
+      productDesc: $("#pd").value.trim(),
+      helpUrl: $("#hu").value.trim().replace(/\/+$/, ""),
+      helpSections: $("#hs").value.trim(),
       model: $("#md").value.trim(),
       effort: $("#ef").value,
     };
@@ -105,7 +190,7 @@ A.setSave = (el) =>
     Object.assign(S, r);
     window.dispatchEvent(new Event("tb:side"));
     R.settings();
-    toast("Settings saved");
+    toast(r.helpSync ? "Settings saved. The help center is syncing again: see progress on the Knowledge page." : "Settings saved");
   });
 
 A.copyHook = async () => {

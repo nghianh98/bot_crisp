@@ -1,15 +1,15 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 /**
- * Transtore Bot — AI chatbot hỗ trợ khách của app Shopify Transtore trên Crisp.
- * Chạy trên Cloudflare Workers, dùng OpenAI. Kiến thức: help.transtore.app + trang website + snippet do team viết.
+ * Support Bot — AI chatbot hỗ trợ khách trên Crisp (hiện dùng cho Transtore; sản phẩm, help center điền trên /admin → Settings).
+ * Chạy trên Cloudflare Workers, dùng OpenAI. Kiến thức: help center + trang website + snippet do team viết.
  *
  * Trang quản trị: /admin (đăng nhập bằng ADMIN_KEY)
  *   Huấn luyện: kiến thức, hướng dẫn, chuyển người, hỏi ý kiến & nhắc khách
  *   Phân tích: hiệu suất, hội thoại, gợi ý cải thiện
- *   Cài đặt: chế độ, giờ làm việc, email, model, sao lưu, nhật ký thay đổi
+ *   Cài đặt: sản phẩm, help center, chế độ, giờ làm việc, email, khoá OpenAI + model, sao lưu, nhật ký thay đổi
  *
  * Cloudflare → Worker → Settings → Variables and Secrets (nên để kiểu Secret):
- *   CRISP_IDENTIFIER, CRISP_KEY, CRISP_HOOK_SECRET, OPENAI_API_KEY, ADMIN_KEY
+ *   CRISP_IDENTIFIER, CRISP_KEY, CRISP_HOOK_SECRET, ADMIN_KEY (OPENAI_API_KEY: tuỳ chọn, nhập khoá trên /admin cũng được)
  * Bindings: KV namespace tên KB.   Triggers → Cron: * * * * *
  *
  * Code chia nhiều file, không gộp: mỗi file ở đây là 1 file trên Cloudflare (Edit code → Explorer).

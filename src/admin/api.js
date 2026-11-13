@@ -1,9 +1,9 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // API của trang quản trị (/api/*): trang /admin gọi vào đây để đọc và lưu dữ liệu.
 import { isAdmin, whoOf } from "./auth.js";
-import { callOpenAI, generateReply } from "../ai.js";
+import { callOpenAI, generateReply, listModels, productLine } from "../ai.js";
 import { handoffNote } from "../handoff.js";
-import { AI_FALLBACK_REPLY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_LABELS, QUEUE, SETTINGS_FIELDS, TRIGGERS, applySettings, cfg, currentMode, effortLevel, normEscalation, normFollowup, withConfig } from "../config.js";
+import { AI_FALLBACK_REPLY, AI_KEY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_LABELS, QUEUE, SETTINGS_FIELDS, TRIGGERS, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, withAiKey, withConfig } from "../config.js";
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
 import { cleanTag, normTags, tagSlug } from "../tags.js";
@@ -32,6 +32,7 @@ export async function api(env, request, url) {
       case "POST /api/kb": return json(await apiKb(env, body, who));
       case "POST /api/tags": return json(await apiTags(env, body, who));
       case "POST /api/test": return json(await apiTest(env, body));
+      case "POST /api/openai": return json(await apiOpenAI(env, body, who));
       case "GET /api/analytics": return json(await apiAnalytics(env, monthParam(env, url)));
       case "GET /api/log": return json({ month: monthParam(env, url), items: (await readLog(env, monthParam(env, url))).items });
       case "POST /api/log": return json(await apiLogUpdate(env, body));
@@ -53,7 +54,7 @@ export function settingsView(env) {
     settings[k] = k === "mode" ? currentMode(env) : k === "effort" ? effortLevel(env) : cfg(env, f.env);
     sources[k] = env.__saved?.[k] != null && env.__saved[k] !== "" ? "admin" : env.__orig?.[f.env] ? "cloudflare" : "default";
   }
-  return { settings, sources, escalation: env.__esc, followup: env.__fu };
+  return { settings, sources, escalation: env.__esc, followup: env.__fu, ai: env.__aiKey };
 }
 
 const syncView = (st) => ({
@@ -106,7 +107,7 @@ export async function apiState(env, url, who) {
     health: [
       { label: "Crisp keys", ok: !!(env.CRISP_IDENTIFIER && env.CRISP_KEY), fix: "Add CRISP_IDENTIFIER and CRISP_KEY in Cloudflare" },
       { label: "Crisp webhook signature", ok: !!env.CRISP_HOOK_SECRET || cfg(env, "VERIFY_HOOKS") === "false", fix: "Add CRISP_HOOK_SECRET in Cloudflare" },
-      { label: "OpenAI key", ok: !!env.OPENAI_API_KEY, fix: "Add OPENAI_API_KEY in Cloudflare" },
+      { label: "OpenAI key", ok: !!env.OPENAI_API_KEY, detail: env.__aiKey?.from === "admin" ? `Saved in Settings → AI (${env.__aiKey.hint})` : "Set in Cloudflare (OPENAI_API_KEY)", fix: "Add a key in Settings → AI" },
       { label: "Help center", ok: (meta.pages || 0) > 0, detail: meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles in use` : "Not loaded yet", fix: "Click Sync now on the Knowledge page. Also check the Cron trigger * * * * * is on in Cloudflare." },
     ],
     pending: log.items.filter((x) => x.gap && !x.st).length,
@@ -173,13 +174,13 @@ export async function apiSettings(env, body, who) {
   for (const [k, raw] of Object.entries(body.settings || {})) {
     const f = SETTINGS_FIELDS[k];
     if (!f) continue;
-    const v = clip(raw, f.max || 40);
+    const v = clip(raw, f.max || 40, !!f.multiline);
     if (f.values && !f.values.includes(v)) bad(`${f.label}: invalid value`);
     if (f.required && !v) bad(`${f.label} can't be empty`);
     if (f.check && !f.check(v)) bad(f.error);
     if ((cur[k] ?? (k === "mode" ? env.__saved?.mode : undefined) ?? null) !== v) {
       cur[k] = v;
-      changed.push(`${f.label}: ${k === "mode" ? MODE_LABELS[v] : v || "(empty)"}`);
+      changed.push(`${f.label}: ${k === "mode" ? MODE_LABELS[v] : clip(v, 80) || "(empty)"}`);
     }
   }
   for (const [part, norm, label] of [["escalation", normEscalation, "Escalation"], ["followup", normFollowup, "Feedback & follow-up"]]) {
@@ -191,11 +192,60 @@ export async function apiSettings(env, body, who) {
       changed.push(label);
     }
   }
+  // Đổi help center (link hoặc section): đọc sitemap ngay để báo lỗi trước khi lưu, rồi cho sync chạy lại từ đầu (cron đọc tiếp từng phần)
+  let helpJob = null;
+  const nextEnv = applySettings(env, { ...cur, mode: cur.mode ?? env.__saved?.mode });
+  if (cfg(nextEnv, "HELP_CENTER_URL") !== cfg(env, "HELP_CENTER_URL") || cfg(nextEnv, "HELP_CENTER_SECTIONS") !== cfg(env, "HELP_CENTER_SECTIONS")) {
+    const kbCfg = (await getJSON(env, "cfg:kb")) || {};
+    try {
+      helpJob = await newSyncJob(nextEnv, kbCfg, who);
+    } catch (e) {
+      bad(`Couldn't read the help center: ${e.message}. Check the link (its sitemap.xml must be reachable) and the sections.`);
+    }
+  }
   if (changed.length) {
     await putJSON(env, "cfg:settings", cur);
     await logChange(env, who, `Settings: ${changed.join("; ")}`);
   }
-  return settingsView(applySettings(env, { ...cur, mode: cur.mode ?? env.__saved?.mode }));
+  if (helpJob) {
+    const st = (await getJSON(env, SYNC)) || {};
+    st.job = { ...helpJob, touched: 0 }; // touched 0: cron bắt đầu đọc ngay phút tới
+    delete st.error;
+    await putJSON(env, SYNC, st);
+  }
+  return { ...settingsView(nextEnv), helpSync: !!helpJob };
+}
+
+// Settings → AI: khoá OpenAI và danh sách model khoá đó dùng được. Khoá không bao giờ được gửi lại trình duyệt.
+export async function apiOpenAI(env, body, who) {
+  switch (body.op) {
+    case "models": {
+      if (!env.OPENAI_API_KEY) bad("Add an OpenAI API key first");
+      return { models: await listModels(env, env.OPENAI_API_KEY) };
+    }
+    case "saveKey": {
+      const key = String(body.key || "").trim();
+      if (!/^sk-[\w-]{20,300}$/.test(key)) bad("That doesn't look like an OpenAI API key. Keys start with sk- (copy it from platform.openai.com/api-keys).");
+      let models = null;
+      let warning = null;
+      try {
+        models = await listModels(env, key);
+      } catch (e) {
+        if (e.status !== 403) throw e; // 403: khoá giới hạn quyền, không được xem danh sách model, nhưng vẫn gọi AI được
+        warning = "Key saved. It isn't allowed to list models (restricted key), so type the model name yourself.";
+      }
+      const rec = { key, by: who, at: Date.now() };
+      await putJSON(env, AI_KEY, rec);
+      await logChange(env, who, `Saved a new OpenAI API key (${keyHint(key)})`);
+      return { ai: withAiKey(env.__orig || env, rec).__aiKey, models, warning };
+    }
+    case "removeKey": {
+      await env.KB.delete(AI_KEY);
+      await logChange(env, who, "Removed the OpenAI API key saved in admin");
+      return { ai: withAiKey(env.__orig || env, null).__aiKey, models: null };
+    }
+  }
+  bad("Unknown action");
 }
 
 export async function apiGuidance(env, body, who) {
@@ -421,7 +471,7 @@ export async function apiSuggest(env, body) {
   const items = (await readLog(env, month)).items.filter((x) => x.gap && !x.st && x.q).slice(-80);
   if (items.length < 2) bad("Grouping needs at least 2 open questions.");
   const r = await callOpenAI(env, {
-    instructions: `You help the Transtore support team (a Shopify app for store translation, multi-currency and geolocation) improve their support chatbot. Below is a numbered list of customer questions the bot could not answer with its knowledge. Group questions about the same missing knowledge (at most 8 groups, biggest first; a question may stay alone in its group). For each group give: "title": a short English description of the missing knowledge (max 12 words); "question": one clear English question that covers the group, to be used as a snippet title; "items": the numbers of the questions in the group.`,
+    instructions: `You help the support team of ${productLine(env)} improve their support chatbot. Below is a numbered list of customer questions the bot could not answer with its knowledge. Group questions about the same missing knowledge (at most 8 groups, biggest first; a question may stay alone in its group). For each group give: "title": a short English description of the missing knowledge (max 12 words); "question": one clear English question that covers the group, to be used as a snippet title; "items": the numbers of the questions in the group.`,
     input: [{ role: "user", content: items.map((x, i) => `${i + 1}. ${x.q.replace(/\s+/g, " ")}`).join("\n") }],
     schemaName: "gap_groups",
     schema: {
@@ -443,17 +493,17 @@ export async function apiExport(env) {
   const [settings, guidance, snippets, kb, tags] = await Promise.all(["cfg:settings", "cfg:guidance", "cfg:snippets", "cfg:kb", "cfg:tags"].map((k) => getJSON(env, k)));
   const data = { app: "transtore-bot", version: 2, exportedAt: new Date().toISOString(), settings: settings || {}, guidance: guidance || [], snippets: snippets || [], tags: tags || null, kb: { excluded: kb?.excluded || [], web: kb?.web || [], autoSync: autoSyncOf(kb) } };
   return new Response(JSON.stringify(data, null, 2), {
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": `attachment; filename="transtore-bot-backup-${localNow(env).month}.json"` },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": `attachment; filename="bot-backup-${localNow(env).month}.json"` },
   });
 }
 
 export async function apiImport(env, body, who) {
   const d = body.data;
-  if (!d || d.app !== "transtore-bot") bad("This file isn't a Transtore Bot backup");
+  if (!d || d.app !== "transtore-bot") bad("This file isn't a backup from this bot's admin");
   const settings = {};
   for (const [k, f] of Object.entries(SETTINGS_FIELDS)) {
     if (d.settings?.[k] == null) continue;
-    const v = clip(d.settings[k], f.max || 40);
+    const v = clip(d.settings[k], f.max || 40, !!f.multiline);
     if ((!f.values || f.values.includes(v)) && (!f.check || f.check(v)) && (!f.required || v)) settings[k] = v;
   }
   settings.escalation = normEscalation(d.settings?.escalation);

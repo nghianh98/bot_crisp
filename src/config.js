@@ -5,7 +5,10 @@ import { parseBusinessHours } from "./time.js";
 import { clip, getJSON, num } from "./util.js";
 
 export const DEFAULTS = {
-  BOT_NAME: "Transtore Bot",
+  BOT_NAME: "Support Bot",
+  // Sản phẩm bot hỗ trợ: điền trên /admin → Settings → Product (mỗi app một bộ, không ghi cứng trong code)
+  PRODUCT_NAME: "our product",
+  PRODUCT_DESC: "",
   BOT_AVATAR: "",
   BOT_MODE: "offline",
   BOT_LANGUAGE: "English",
@@ -20,8 +23,8 @@ export const DEFAULTS = {
   // nên: lần gọi đầu tối đa AI_FIRST_MS; nếu hỏng thì thử lại 1 lần, nghĩ ít hơn, sao cho tổng không quá AI_TOTAL_MS.
   AI_FIRST_MS: "16000",
   AI_TOTAL_MS: "24000",
-  HELP_CENTER_URL: "https://help.transtore.app",
-  HELP_CENTER_SECTIONS: "docs,faq,troubleshooting,comparisons",
+  HELP_CENTER_URL: "", // trống = chưa có help center (chỉ dùng snippet và trang website)
+  HELP_CENTER_SECTIONS: "", // vd "docs,faq": chỉ lấy bài có đường dẫn /docs/… /faq/… ; trống = cả trang
   SUPPORT_EMAIL: "",
   BOT_ORIGINS: "chat",
   PAUSED_SEGMENT: "bot-paused", // nhân viên đã vào → bot im hẳn
@@ -38,13 +41,12 @@ export const DEFAULTS = {
   OPENAI_BASE_URL: "https://api.openai.com",
 };
 
-// Tag mặc định (issue-<key> trong Crisp). Team sửa được danh sách trên /admin → Tag
+// Tag mặc định cho bot mới (issue-<key> trong Crisp). Team sửa danh sách cho từng sản phẩm trên /admin → Tag
 export const CATEGORIES = {
-  setup: ["Setup", "Installation, app embed, getting started"],
-  translation: ["Translation", "Translation, languages, untranslated content"],
-  currency: ["Currency", "Currency conversion"],
-  geolocation: ["Geolocation", "Geolocation, switching language or currency by visitor location"],
-  display: ["Storefront display", "Storefront display issues, theme conflicts"],
+  setup: ["Setup", "Installation, getting started, first configuration"],
+  "how-to": ["How-to", "How to use a feature or change a setting"],
+  bug: ["Bug", "Something doesn't work as expected, errors"],
+  display: ["Display", "Display issues, theme or layout conflicts"],
   billing: ["Billing", "Plans, payments, refunds"],
   uninstall: ["Uninstall", "Uninstalling, cancelling the plan"],
   "feature-request": ["Feature request", "Feature requests"],
@@ -68,7 +70,7 @@ export const TRIGGERS = {
   askHuman: { label: "Customer asks for a person", hint: "The customer says they want to talk to someone on the team.", prompt: "the customer asks for a human" },
   billing: { label: "Refunds and billing disputes", hint: "Refunds, unexpected charges, cancellations that involve money.", prompt: "refunds, unexpected charges or billing disputes" },
   angry: { label: "Angry customer", hint: "The customer is upset or threatens a 1-star review, a chargeback or uninstalling.", prompt: "the customer is angry or threatens a bad review, a chargeback or to uninstall" },
-  bug: { label: "Store problems the team must check", hint: "Translations or currency still not showing after following the docs, or the app shows an error.", prompt: "bugs on the storefront, translations or currency not showing after following the docs, app errors" },
+  bug: { label: "Problems the team must check", hint: "Something still doesn't work after following the docs, or the app shows an error.", prompt: "bugs: something still doesn't work on the customer's side after following the docs, or the app shows an error" },
   noAnswer: { label: "The bot has no answer", hint: "Snippets and the help center don't cover the question. When off, the bot says it doesn't have that information yet and suggests the support email.", prompt: "questions the snippets and help center do not answer" },
 };
 
@@ -110,9 +112,15 @@ export const FEEDBACK_ID = "tb-feedback";
 // Câu gửi khách khi AI không trả lời được (OpenAI lỗi hoặc quá chậm, kể cả sau khi thử lại)
 export const AI_FALLBACK_REPLY = "Sorry, I couldn't answer that right now. Our team will get back to you as soon as possible.";
 
+const HTTPS_URL = /^https:\/\/[^\s/]+\.[^\s/]+(\/\S*)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/\S*)?$/; // http chỉ cho máy local khi test
+
 export const SETTINGS_FIELDS = {
   mode: { env: "BOT_MODE", label: "Bot mode", values: ["off", "offline", "always"] },
   botName: { env: "BOT_NAME", label: "Bot name", max: 40, required: true },
+  product: { env: "PRODUCT_NAME", label: "Product name", max: 60 },
+  productDesc: { env: "PRODUCT_DESC", label: "About the product", max: 1000, multiline: true },
+  helpUrl: { env: "HELP_CENTER_URL", label: "Help center", max: 200, check: (v) => !v || HTTPS_URL.test(v), error: "The help center link must start with https://" },
+  helpSections: { env: "HELP_CENTER_SECTIONS", label: "Help center sections", max: 200, check: (v) => /^[\w\-/, ]*$/.test(v), error: "Sections: path names separated by commas, like docs,faq" },
   language: { env: "BOT_LANGUAGE", label: "Reply language", max: 30, required: true },
   businessHours: { env: "BUSINESS_HOURS", label: "Working hours", max: 80, check: (v) => !v || !!parseBusinessHours(v), error: "Working hours format is invalid (example: Mon-Sun 08:00-24:00)" },
   supportEmail: { env: "SUPPORT_EMAIL", label: "Support email", max: 120, check: (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), error: "That email address isn't valid" },
@@ -139,13 +147,26 @@ export function applySettings(env, saved = {}, tagsRaw = env.__tagsRaw) {
 
 export async function withConfig(env) {
   if (env.__ready) return env;
-  const [saved, tagsRaw] = await Promise.all([getJSON(env, "cfg:settings"), getJSON(env, "cfg:tags")]);
+  const [saved, tagsRaw, aiKey] = await Promise.all([getJSON(env, "cfg:settings"), getJSON(env, "cfg:tags"), getJSON(env, AI_KEY)]);
   const s = saved || {};
   if (s.mode == null && env.KB) {
     const legacy = await env.KB.get("settings:mode"); // nút bật/tắt của trang /report cũ
     if (legacy) s.mode = legacy;
   }
-  return applySettings(env, s, tagsRaw);
+  return applySettings(withAiKey(env, aiKey), s, tagsRaw);
+}
+
+// Khoá OpenAI nhập trên /admin → Settings → AI. Lưu ở KV riêng, KHÔNG nằm trong file sao lưu, không bao giờ gửi lại trình duyệt.
+export const AI_KEY = "secret:openai";
+
+export const keyHint = (k) => (k ? `${k.slice(0, 3)}…${k.slice(-4)}` : "");
+
+// Khoá lưu trên /admin thắng biến OPENAI_API_KEY đặt ở Cloudflare. env.__aiKey = thông tin để hiện trên admin (không có khoá).
+export function withAiKey(env, saved) {
+  const cf = env.__cfOpenAI !== undefined ? env.__cfOpenAI : env.OPENAI_API_KEY || "";
+  const key = saved?.key || cf;
+  const from = saved?.key ? "admin" : cf ? "cloudflare" : null;
+  return { ...env, __cfOpenAI: cf, OPENAI_API_KEY: key, __aiKey: { from, hint: keyHint(key), by: saved?.key ? saved.by || null : null, at: saved?.key ? saved.at || null : null, cloudflare: !!cf } };
 }
 
 // Mức "nghĩ" của AI: off (không nghĩ, nhanh nhất) | low | medium.
