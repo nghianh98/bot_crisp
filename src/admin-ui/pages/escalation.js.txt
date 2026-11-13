@@ -21,7 +21,7 @@ R.escalation = () => {
 <section class="sec"><h2>While the customer waits for the team</h2><div class="rows">
 <div class="row"><div class="grow"><p class="t">The customer keeps messaging</p><p class="sub">The bot reassures them and says when the team will reply, at most once every
 <select class="in inl" id="cd" aria-label="Minutes between reassurance messages">${[1, 2, 5, 10, 30].map((v) => `<option value="${v}" ${E.cooldownMin === v ? "selected" : ""}>${v} min</option>`).join("")}</select>.</p></div></div>
-<div class="row"><div class="grow"><p class="t">Marked in Crisp</p><p class="sub">The conversation gets the <b>${esc(sg.handoff)}</b> segment, plus <b>${esc(sg.urgent)}</b> if the customer is angry. When someone on the team replies, the bot goes quiet and adds <b>${esc(sg.paused)}</b>. Resolving the conversation turns the bot back on. Rename segments on the Tags page.</p></div></div>
+<div class="row"><div class="grow"><p class="t">Marked in Crisp</p><p class="sub">The conversation gets the <b>${esc(sg.handoff)}</b> segment, plus <b>${esc(sg.urgent)}</b> if the customer is angry, and <b>${esc(sg.p1)}</b> or <b>${esc(sg.p2)}</b> for priority P1 or P2 issues (the handoff note shows P1–P4). When someone on the team replies, the bot goes quiet and adds <b>${esc(sg.paused)}</b>. Resolving the conversation turns the bot back on. Rename segments on the Tags page.</p></div></div>
 </div></section>
 <div class="savebar"><p class="meta">Changes reach real customers within about a minute.</p><button type="button" class="btn pri" data-act="escSave">Save</button></div>`);
 };

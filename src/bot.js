@@ -116,7 +116,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
       if (state === "failed") await setState(env, sessionId, "handoff");
       return compose(env, websiteId, sessionId, false);
     }
-    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, sources: [], failed: clip(e?.message || String(e), 200) };
+    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: clip(e?.message || String(e), 200) };
   }
   await compose(env, websiteId, sessionId, false);
   if (handedOff && r.action === "ask_info") r.action = "answer";
@@ -146,6 +146,8 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   }
   const countHandoff = newHandoff && state !== "failed"; // lần hỏng trước đã tính 1 lần chuyển người rồi
   if (r.urgent) add.push(tg.segments.urgent);
+  if (r.priority === "P1") add.push(tg.segments.p1); // mức ưu tiên cao: gắn segment để team lọc trong Crisp
+  if (r.priority === "P2" && !segNow.includes(tg.segments.p1)) add.push(tg.segments.p2);
   if (add.length) await updateSegments(env, websiteId, sessionId, { add, current: segNow });
 
   const question = history.filter((h) => h.role === "user").slice(-1)[0]?.content || "";
@@ -173,7 +175,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   await appendLog(env, {
     id: uid(), t: Date.now(), w: websiteId, sid: sessionId,
     q: clip(question, 300, true), a: clip(r.reply, 700, true),
-    act: r.action, cat: r.category, urg: !!r.urgent, gap: !!r.knowledge_gap,
+    act: r.action, cat: r.category, urg: !!r.urgent, gap: !!r.knowledge_gap, pri: r.priority || undefined,
     src: (r.sources || []).slice(0, 5).map((x) => clip(x, 200)), ho: handedOff || undefined,
     err: r.failed || undefined, // AI hỏng, khách nhận câu dự phòng (trang Conversations hiện nhãn "AI error")
   });
@@ -204,7 +206,7 @@ export async function onResolved(env, websiteId, sessionId) {
   const ok = keys.includes(category);
   const add = ok && !segments.includes(tagName(env, category)) ? [tagName(env, category)] : [];
   const sg = env.__tags.segments;
-  await updateSegments(env, websiteId, sessionId, { add, remove: [sg.paused, sg.handoff, sg.urgent], current: segments });
+  await updateSegments(env, websiteId, sessionId, { add, remove: [sg.paused, sg.handoff, sg.urgent, sg.p1, sg.p2], current: segments });
 
   if (ok) {
     await recordStats(env, (s) => {

@@ -30,6 +30,8 @@ export const DEFAULTS = {
   PAUSED_SEGMENT: "bot-paused", // nhân viên đã vào → bot im hẳn
   HANDOFF_SEGMENT: "bot-handoff", // bot đã chuyển người → bot chỉ trấn an khách
   URGENT_SEGMENT: "urgent", // khách giận / doạ report / store lỗi nặng
+  P1_SEGMENT: "p1-critical", // mức ưu tiên P1: store/checkout hỏng, mất dữ liệu, bảo mật
+  P2_SEGMENT: "p2-high", // mức ưu tiên P2: tính năng chính hỏng, không có cách tạm
   TAG_PREFIX: "issue-",
   CLASSIFY_ON_RESOLVE: "true",
   DEBOUNCE_MS: "2500",
@@ -71,6 +73,8 @@ export const TRIGGERS = {
   billing: { label: "Refunds and billing disputes", hint: "Refunds, unexpected charges, cancellations that involve money.", prompt: "refunds, unexpected charges or billing disputes" },
   angry: { label: "Angry customer", hint: "The customer is upset or threatens a 1-star review, a chargeback or uninstalling.", prompt: "the customer is angry or threatens a bad review, a chargeback or to uninstall" },
   bug: { label: "Problems the team must check", hint: "Something still doesn't work after following the docs, or the app shows an error.", prompt: "bugs: something still doesn't work on the customer's side after following the docs, or the app shows an error" },
+  sensitive: { label: "Security, privacy and legal", hint: "Data access or deletion, GDPR, security problems, terms or contract questions. The bot hands these off right away instead of answering.", prompt: "security problems, data privacy or deletion requests (GDPR), someone else accessing the account, or legal, terms and contract questions" },
+  promises: { label: "Promises the bot can't make", hint: "When a feature will ship, roadmap, discounts, exceptions or custom deals.", prompt: "anything that needs a promise: release dates or roadmap, discounts, exceptions to a policy or custom deals" },
   noAnswer: { label: "The bot has no answer", hint: "Snippets and the help center don't cover the question. When off, the bot says it doesn't have that information yet and suggests the support email.", prompt: "questions the snippets and help center do not answer" },
 };
 
@@ -83,7 +87,7 @@ export const INFO_FIELDS = {
 };
 
 export const ESCALATION_DEFAULT = {
-  triggers: { askHuman: true, billing: true, angry: true, bug: true, noAnswer: true },
+  triggers: { askHuman: true, billing: true, angry: true, bug: true, noAnswer: true, sensitive: true, promises: true },
   askInfo: true,
   fields: ["storeUrl", "issue", "theme", "tried", "screenshot"],
   cooldownMin: 2,

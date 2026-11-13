@@ -12,13 +12,14 @@ export const replySchema = (keys, { brief = false } = {}) => {
   const s = {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "category", "knowledge_gap", "urgent", "sources"],
+    required: ["reply", "action", "category", "knowledge_gap", "urgent", "priority", "sources"],
     properties: {
       reply: { type: "string", description: "Message to send to the customer" },
       action: { type: "string", enum: ["answer", "ask_info", "handoff"] },
       category: { type: "string", enum: keys },
       knowledge_gap: { type: "boolean", description: "true if the snippets and help center do not cover the customer's question" },
       urgent: { type: "boolean", description: "true if the customer is angry or upset, threatens a bad review, report, chargeback or uninstall, or their storefront/checkout is broken" },
+      priority: { type: "string", enum: ["P1", "P2", "P3", "P4"], description: "How serious the customer's issue is (P1 critical … P4 low)" },
       sources: { type: "array", items: { type: "string" }, description: "ids of the snippets and urls of the articles used for this reply" },
     },
   };
@@ -37,7 +38,7 @@ export function actionRules(env) {
   const reasons = Object.keys(TRIGGERS).filter((k) => e.triggers[k]).map((k) => TRIGGERS[k].prompt);
   const fields = e.fields.map((f) => INFO_FIELDS[f]?.prompt).filter(Boolean);
   const askInfo = e.askInfo && fields.length > 0;
-  const immediate = [e.triggers.askHuman && "insists on a human", e.triggers.angry && "is angry", e.triggers.billing && "has a refund or billing dispute"].filter(Boolean);
+  const immediate = [e.triggers.askHuman && "insists on a human", e.triggers.angry && "is angry", e.triggers.billing && "has a refund or billing dispute", e.triggers.sensitive && "raises a security, privacy or legal issue"].filter(Boolean);
   const lines = ['Choose "action":'];
   lines.push(
     '- "answer": the snippets or help center articles answer the question.' +
@@ -57,6 +58,12 @@ export function actionRules(env) {
     `- "category": the tag that best fits the topic of the conversation:\n${tagList(env)}`,
     '- "knowledge_gap": true when the snippets and help center do not contain what the customer asked.',
     '- "urgent": true when the customer is angry or upset, swears, threatens a bad review, a report, a chargeback or to uninstall, or says their storefront or checkout is broken.',
+    `- "priority": how serious the customer's issue is, judged from the whole conversation:
+  P1 critical: their store, storefront or checkout is down or broken for shoppers, data is lost or exposed, or there is a security problem.
+  P2 high: a main feature doesn't work, there is no workaround, or it blocks something time-sensitive (a launch, a sale).
+  P3 medium: something works only partly or a workaround exists; one page or a small part is affected.
+  P4 low: how-to questions, general questions, cosmetic issues, feature requests.
+  Raise it one level when the customer says it's urgent, has asked about the same issue before and is still waiting, or the problem is getting worse. When unsure between two levels, choose the higher one.${reasons.length ? " A P1 issue always needs a human: hand off right away (you may ask for the store URL in the same message if it's missing)." : ""}`,
     '- "sources": the id of every snippet and the url of every article you used for this reply (empty list if none).'
   );
   if (briefOn(env)) lines.push(BRIEF_RULE);
@@ -77,6 +84,7 @@ Answering:
 - ${/^auto$/i.test(cfg(env, "BOT_LANGUAGE")) ? "Reply in the customer's language." : `Always reply in ${cfg(env, "BOT_LANGUAGE")}, whatever language the customer writes in.`} Warm, human, to the point, like a helpful support agent in a chat window.
 - Use ONLY the team snippets and the help center articles below. Snippets are written by the ${product} team: if a snippet and an article disagree, the snippet wins.
 - Never invent features, prices, plans, steps or links.
+- If two articles disagree, give the more cautious answer and say the team can confirm.
 - Answer only what was asked. Do not add extra facts, limits or tips the customer did not ask about.
 
 Team snippets (they come before every other rule):
@@ -231,6 +239,7 @@ export async function generateReply(env, history, { handedOff = false } = {}) {
   }
   if (!r.reply?.trim()) throw aiError("the AI returned an empty reply", false);
   if (!["answer", "ask_info", "handoff"].includes(r.action)) r.action = "handoff";
+  if (!["P1", "P2", "P3", "P4"].includes(r.priority)) r.priority = "P3";
   r.sources = Array.isArray(r.sources) ? r.sources.filter((x) => typeof x === "string").slice(0, 6) : [];
   if (retried) r.retried = retried; // để khung Test the bot báo: lần đầu hỏng vì sao
   return r;

@@ -7,6 +7,7 @@ const FILTERS = {
   handoff: ["Handed off", (x) => x.act === "handoff"],
   gap: ["Missing knowledge", (x) => x.gap],
   err: ["AI error", (x) => x.err || x.a?.startsWith("Sorry, I couldn't answer that right now.")],
+  high: ["P1 / P2", (x) => x.pri === "P1" || x.pri === "P2"],
   urgent: ["Angry customer", (x) => x.urg],
   down: ["Rated not helpful", (x) => x.fb === "down"],
   up: ["Rated helpful", (x) => x.fb === "up"],

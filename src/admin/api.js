@@ -152,12 +152,12 @@ export async function apiTags(env, body, who) {
     const prefix = String(body.prefix ?? cur.prefix).trim().toLowerCase();
     if (!/^[a-z0-9_-]{0,20}$/.test(prefix)) bad("The prefix can only use lowercase letters, numbers, - and _");
     const segments = {};
-    for (const k of ["paused", "handoff", "urgent"]) {
+    for (const k of ["paused", "handoff", "urgent", "p1", "p2"]) {
       const v = String(body.segments?.[k] ?? cur.segments[k]).trim().toLowerCase();
       if (!tagSlug(v, 40)) bad("Segment names can only use lowercase letters, numbers, - and _");
       segments[k] = v;
     }
-    if (new Set(Object.values(segments)).size < 3) bad("The three status segments need different names");
+    if (new Set(Object.values(segments)).size < 5) bad("Each status segment needs a different name");
     cur.prefix = prefix;
     cur.timing = body.timing === "resolve" ? "resolve" : body.timing === "first" ? "first" : cur.timing;
     cur.segments = segments;
@@ -408,7 +408,7 @@ export async function apiTest(env, body) {
     r = await generateReply(env, msgs, { handedOff: !!body.handedOff });
   } catch (e) {
     // AI hỏng: cho người thử thấy đúng câu khách thật sẽ nhận, kèm lý do
-    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, sources: [], failed: e?.message || String(e) };
+    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: e?.message || String(e) };
   }
   const fu = env.__fu;
   const feedback = r.action === "answer" && !body.handedOff && !r.urgent && !r.knowledge_gap && fu.feedback ? { text: fu.feedbackText, yes: fu.yesLabel, no: fu.noLabel, thanks: fu.thanksText } : null;

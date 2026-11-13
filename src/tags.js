@@ -28,6 +28,8 @@ export function normTags(x, env) {
       paused: seg(x.segments?.paused, cfg(env, "PAUSED_SEGMENT")),
       handoff: seg(x.segments?.handoff, cfg(env, "HANDOFF_SEGMENT")),
       urgent: seg(x.segments?.urgent, cfg(env, "URGENT_SEGMENT")),
+      p1: seg(x.segments?.p1, cfg(env, "P1_SEGMENT")),
+      p2: seg(x.segments?.p2, cfg(env, "P2_SEGMENT")),
     },
   };
 }

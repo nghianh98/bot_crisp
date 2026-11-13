@@ -171,6 +171,7 @@ export const ACTIONS = { answer: ["Answered", "c-answer"], ask_info: ["Asked for
 export function chipsFor(x) {
   const out = [];
   if (x.act && ACTIONS[x.act]) out.push(`<span class="chip ${ACTIONS[x.act][1]}">${ACTIONS[x.act][0]}</span>`);
+  if (x.pri === "P1" || x.pri === "P2") out.push(`<span class="chip ${x.pri === "P1" ? "c-urgent" : "c-gap"}" title="Priority: ${x.pri === "P1" ? "critical" : "high"}">${x.pri}</span>`);
   if (x.cat) out.push(`<span class="chip c-tag" title="${esc(tagLabel(x.cat))}">${esc(tagFull(x.cat))}</span>`);
   if (x.err) out.push(`<span class="chip c-urgent" title="${esc(`The AI failed, so the customer got the backup reply: ${x.err}`)}">AI error</span>`);
   if (x.urg) out.push(`<span class="chip c-urgent">Angry customer</span>`);
