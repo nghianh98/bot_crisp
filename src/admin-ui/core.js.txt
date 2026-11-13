@@ -1,0 +1,195 @@
+// Shared by every page: state, API calls, formatting, toast, dialogs, action registry.
+
+export const $ = (s, el = document) => el.querySelector(s);
+export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// S: data from /api/state. C: per-month data already loaded. UI: choices made in the interface.
+export const store = { S: null };
+export const C = { an: {}, log: {} };
+export const UI = { tab: "snippets", q: "", cf: "all", cq: "", month: null, groups: {}, fixLog: null, retry: null };
+
+/** Bumped on every navigation; slow pages check live() before drawing so they never overwrite a newer page */
+export const nav = { gen: 0 };
+export function guard() {
+  const g = nav.gen;
+  return () => g === nav.gen;
+}
+
+/** Actions by data-act="name": A[name](element, event) */
+export const A = {};
+/** Pages by #name: R[name](argument) */
+export const R = {};
+
+export async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opt);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {}
+  if (res.status === 401) {
+    toast("Your session has expired. Opening the sign-in page…", { err: true });
+    setTimeout(() => location.reload(), 1500);
+    throw new Error(data.error || "Session expired");
+  }
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data;
+}
+
+export async function getAn(month, force = false) {
+  if (force || !C.an[month]) C.an[month] = await api(`/api/analytics?month=${month}`);
+  return C.an[month];
+}
+export async function getLog(month, force = false) {
+  if (force || !C.log[month]) C.log[month] = (await api(`/api/log?month=${month}`)).items;
+  return C.log[month];
+}
+
+/* ------------------------------- Formatting ------------------------------- */
+
+const nf = new Intl.NumberFormat("en-US");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export const n = (v) => nf.format(v || 0);
+export const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "–");
+export const pad = (x) => String(x).padStart(2, "0");
+export const fmtDay = (t) => {
+  const d = new Date(t);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+};
+export const fmtClock = (t) => {
+  const d = new Date(t);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+export const fmtTime = (t) => (t ? `${fmtDay(t)} ${fmtClock(t)}` : "");
+export function ago(t) {
+  if (!t) return "never";
+  const ms = typeof t === "string" ? Date.parse(t) : t;
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)} days ago`;
+  return fmtDay(ms);
+}
+export const monthLabel = (m) => {
+  const [y, mo] = m.split("-");
+  return `${MONTHS_LONG[+mo - 1]} ${y}`;
+};
+export function shiftMonth(m, d) {
+  let [y, mo] = m.split("-").map(Number);
+  mo += d;
+  if (mo < 1) { mo = 12; y--; }
+  if (mo > 12) { mo = 1; y++; }
+  return `${y}-${pad(mo)}`;
+}
+export const host = (u) => {
+  try {
+    return new URL(u).host;
+  } catch {
+    return u;
+  }
+};
+export const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+export const matches = (q, ...fields) => !q.trim() || fields.some((f) => words(f).includes(words(q.trim())));
+export const plural = (k, one, many = `${one}s`) => `${n(k)} ${k === 1 ? one : many}`;
+
+/* --------------------------------- Toast --------------------------------- */
+
+let toastTimer;
+export function toast(msg, opts = {}) {
+  const t = $("#toast");
+  t.className = "toast on" + (opts.err ? " err" : "");
+  t.innerHTML = `<span>${esc(msg)}</span>${opts.action ? `<button type="button">${esc(opts.action)}</button>` : ""}`;
+  if (opts.action) {
+    t.querySelector("button").onclick = () => {
+      t.className = "toast";
+      opts.onAction();
+    };
+  }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = "toast"), opts.action ? 8000 : opts.err ? 6000 : 3200);
+}
+export const fail = (e) => toast(e?.message || String(e), { err: true });
+
+/* -------------------------------- Dialogs -------------------------------- */
+
+const dlg = () => $("#dlg");
+
+/** Open a dialog. Buttons with value="..." close it; working buttons use type="button" data-act. */
+export function modal(title, body, foot = "", { wide = false, onOpen } = {}) {
+  const d = dlg();
+  d.className = wide ? "wide" : "";
+  d.innerHTML = `<form class="dl" method="dialog" novalidate>
+<header><h2>${esc(title)}</h2><button class="btn ghost sm" value="close" aria-label="Close">✕</button></header>
+<div class="db">${body}</div>${foot ? `<footer>${foot}</footer>` : ""}</form>`;
+  const form = d.querySelector("form");
+  form.addEventListener("submit", (e) => {
+    if (!e.submitter || !e.submitter.value) e.preventDefault(); // Enter in a field doesn't close the dialog
+  });
+  if (!d.open) d.showModal();
+  onOpen?.(d);
+  return d;
+}
+export const closeModal = () => dlg().open && dlg().close();
+
+export function confirmBox(title, text, okLabel = "Delete", danger = true) {
+  return new Promise((resolve) => {
+    const d = modal(title, `<p style="margin:0">${esc(text)}</p>`, `<button class="btn" value="no">Cancel</button><button class="btn pri ${danger ? "danger" : ""}" value="yes">${esc(okLabel)}</button>`);
+    d.addEventListener("close", () => resolve(d.returnValue === "yes"), { once: true });
+  });
+}
+
+/** Disable a button while the work runs */
+export async function busy(el, fn) {
+  const old = el?.disabled;
+  if (el) el.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    if (el) el.disabled = old;
+  }
+}
+
+/* ---------------------------- Small components ---------------------------- */
+
+export const sw = (on, act, attrs = "", label = "") =>
+  `<button type="button" class="sw" role="switch" aria-checked="${on ? "true" : "false"}" data-act="${act}" ${attrs} aria-label="${esc(label)}"></button>`;
+
+export function monthNav(m) {
+  const S = store.S;
+  return `<div class="mnav" role="group" aria-label="Choose month"><button type="button" class="btn ghost sm" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b>${monthLabel(m)}</b><button type="button" class="btn ghost sm" data-act="month" data-d="1" aria-label="Next month" ${m >= S.month ? "disabled" : ""}>›</button></div>`;
+}
+
+export const tagFull = (k) => (store.S.tags.prefix || "") + k;
+export const tagLabel = (k) => store.S.tags.items.find((t) => t.key === k)?.label || k;
+
+export const ACTIONS = { answer: ["Answered", "c-answer"], ask_info: ["Asked for details", "c-ask"], handoff: ["Handed off", "c-handoff"] };
+
+/** Labels for one bot reply (conversation log or the Test panel) */
+export function chipsFor(x) {
+  const out = [];
+  if (x.act && ACTIONS[x.act]) out.push(`<span class="chip ${ACTIONS[x.act][1]}">${ACTIONS[x.act][0]}</span>`);
+  if (x.cat) out.push(`<span class="chip c-tag" title="${esc(tagLabel(x.cat))}">${esc(tagFull(x.cat))}</span>`);
+  if (x.err) out.push(`<span class="chip c-urgent" title="${esc(`The AI failed, so the customer got the backup reply: ${x.err}`)}">AI error</span>`);
+  if (x.urg) out.push(`<span class="chip c-urgent">Angry customer</span>`);
+  if (x.gap) out.push(`<span class="chip c-gap">Missing knowledge</span>`);
+  if (x.fb === "up") out.push(`<span class="chip c-answer">Rated helpful</span>`);
+  if (x.fb === "down") out.push(`<span class="chip c-urgent">Rated not helpful</span>`);
+  if (x.st === "fixed") out.push(`<span class="chip">Improved</span>`);
+  if (x.st === "dismissed") out.push(`<span class="chip">Dismissed</span>`);
+  return out.join("");
+}
+
+export function setMain(html) {
+  $("#main").innerHTML = `<div class="wrap">${html}</div>`;
+}
+export const header = (title, desc, right = "") => `<header class="ph"><div><h1>${esc(title)}</h1>${desc ? `<p>${desc}</p>` : ""}</div>${right}</header>`;
+
+export const crispUrl = (x) => `https://app.crisp.chat/website/${encodeURIComponent(x.w)}/inbox/${encodeURIComponent(x.sid)}/`;
+
+/** Redraw the current page (after saving) */
+export function refresh() {
+  window.dispatchEvent(new Event("tb:refresh"));
+}

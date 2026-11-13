@@ -1,0 +1,76 @@
+// Performance: automation, involvement, resolution and satisfaction rates; funnel; customers per day; topics.
+import { esc, getAn, guard, header, monthLabel, monthNav, n, pct, R, setMain, store, tagFull, tagLabel, UI } from "../core.js";
+import { dailyChart, fig, funnel } from "../components.js";
+
+R.performance = async () => {
+  const m = UI.month || store.S.month;
+  const head = header("Performance", "How many customers the bot helped this month, and on which topics.", monthNav(m));
+  setMain(`${head}<p class="loading">Loading numbers for ${monthLabel(m)}…</p>`);
+  const live = guard();
+  const a = await getAn(m);
+  if (!live()) return;
+  const fbTotal = a.feedback.up + a.feedback.down;
+  const maxTopic = Math.max(1, ...a.topics.map((t) => t.conv));
+  const outcomes = [
+    ["Customer clicked Helpful", a.confirmed],
+    ["Bot answered, no further questions", a.assumed],
+    ["Handed off to the team", a.handoff],
+    ["Customer left when the bot asked for details", a.abandoned],
+  ];
+  const maxOut = Math.max(1, ...outcomes.map((o) => o[1]));
+  const bot = a.bot;
+
+  setMain(`${head}
+<section class="sec"><div class="figs">
+${fig(pct(a.resolved, a.customers), "Automation rate", `The bot handled ${n(a.resolved)} of ${n(a.customers)} conversations`)}
+${fig(pct(a.involved, a.customers), "Involvement rate", `The bot replied in ${n(a.involved)} of ${n(a.customers)} conversations`)}
+${fig(pct(a.resolved, a.involved), "Resolution rate", `${n(a.resolved)} of ${n(a.involved)} conversations with the bot`)}
+${fig(pct(a.feedback.up, fbTotal), "Rated helpful", fbTotal ? `${n(a.feedback.up)} Helpful, ${n(a.feedback.down)} Not helpful` : "No customer has clicked a button yet")}
+</div>
+<p class="note">Handled by the bot means the bot replied without handing off, including customers who clicked Helpful and customers who didn't ask anything else. That's why it's worth reading next to the Rated helpful rate.</p></section>
+
+<section class="sec"><h2>Funnel</h2>${funnel([
+    { label: "All conversations", v: a.customers },
+    { label: "Bot involved", v: a.involved },
+    { label: "Handled by the bot", v: a.resolved },
+    { label: "Customer clicked Helpful", v: a.confirmed },
+  ])}</section>
+
+<section class="sec"><h2>Customers per day</h2>${dailyChart(
+    a.days,
+    (d) => d.customers,
+    (d) => `Day ${d.d}: ${n(d.customers)} customers\nBot involved ${n(d.involved)}, handed off ${n(d.handoffs)}`,
+    `Customers per day in ${monthLabel(m)}`
+  )}
+<details style="margin-top:8px"><summary class="meta" style="cursor:pointer">Show as a table</summary>
+<table class="tbl" style="margin-top:8px"><thead><tr><th>Day</th><th class="num">Customers</th><th class="num">Bot involved</th><th class="num">Handed off</th></tr></thead><tbody>
+${a.days.filter((d) => d.customers || d.involved).map((d) => `<tr><td>${d.d}</td><td class="num">${n(d.customers)}</td><td class="num">${n(d.involved)}</td><td class="num">${n(d.handoffs)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No data yet</td></tr>`}
+</tbody></table></details></section>
+
+<section class="sec"><h2>Outcomes of conversations with the bot</h2>
+<table class="tbl"><thead><tr><th>Outcome</th><th class="num">Conversations</th><th class="num">Share</th><th class="barcell hide-sm"></th></tr></thead><tbody>
+${outcomes.map(([l, v]) => `<tr><td>${l}</td><td class="num">${n(v)}</td><td class="num">${pct(v, a.involved)}</td><td class="barcell hide-sm"><div class="bar" style="width:${(v / maxOut) * 100}%"></div></td></tr>`).join("")}
+</tbody></table></section>
+
+<section class="sec"><div class="sec-h"><h2>Topics</h2><a href="#tags">Edit tag list</a></div>
+${
+  a.topics.length
+    ? `<table class="tbl"><thead><tr><th>Tag</th><th class="num">Conversations</th><th class="num">Handled by the bot</th><th class="barcell hide-sm"></th></tr></thead><tbody>
+${a.topics
+  .map(
+    (t) => `<tr><td><b>${esc(tagLabel(t.key))}</b><div class="meta">${esc(tagFull(t.key))}</div></td><td class="num">${n(t.conv)}</td><td class="num">${t.bot ? pct(t.resolved, t.bot) : "–"}</td><td class="barcell hide-sm"><div class="bar" style="width:${(t.conv / maxTopic) * 100}%"></div></td></tr>`
+  )
+  .join("")}</tbody></table>
+<p class="note">Handled by the bot per topic counts only conversations the bot took part in. ${n(a.classified)} resolved conversations were re-tagged by the AI.</p>`
+    : `<div class="rows"><div class="empty">No conversations have been tagged this month.</div></div>`
+}</section>
+
+<section class="sec"><h2>What the bot did</h2><table class="tbl"><tbody>
+<tr><td>Answers sent</td><td class="num">${n(bot.answers)}</td></tr>
+<tr><td>Times it asked for details</td><td class="num">${n(bot.askInfo)}</td></tr>
+<tr><td>Handoffs to the team</td><td class="num">${n(bot.handoffs)}</td></tr>
+<tr><td>Angry customers or badly broken stores</td><td class="num">${n(bot.urgent)}</td></tr>
+<tr><td>Questions without knowledge</td><td class="num">${n(bot.gaps)}</td></tr>
+<tr><td>Nudges sent to quiet customers</td><td class="num">${n(bot.nudges)}</td></tr>
+</tbody></table><p class="note">These counts are approximate: in rare cases two events arriving at once can shift a number by 1 or 2.</p></section>`);
+};

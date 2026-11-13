@@ -1,0 +1,46 @@
+{
+  "name": "transtore-bot",
+  "main": "src/worker.js",
+  // Đẩy lên y nguyên từng file trong src/ (không gộp), để editor trên dashboard vẫn thấy đúng cây thư mục.
+  // .js = code Worker, .txt/.html = văn bản (giao diện admin).
+  "no_bundle": true,
+  "find_additional_modules": true,
+  "base_dir": "src",
+  "rules": [
+    { "type": "ESModule", "globs": ["**/*.js"] }
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "compatibility_date": "2026-11-11",
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": false,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "vars": {
+    "BUSINESS_HOURS": "Mon-Sun 08:00-24:00",
+    "SUPPORT_EMAIL": "support@transtore.app"
+  },
+  "kv_namespaces": [
+    {
+      "id": "8dfd5426a1414f89a37d1b2fe4a80237",
+      "binding": "KB"
+    }
+  ]
+}

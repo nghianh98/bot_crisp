@@ -1,0 +1,127 @@
+// "Test the bot" panel: multi-turn chat using the saved knowledge, with why the bot answered as it did.
+import { $, A, api, chipsFor, esc, store } from "./core.js";
+import { openImprove, srcLinks } from "./components.js";
+
+const P = { msgs: [], busy: false };
+
+const STARTERS = [
+  "How do I add a new language?",
+  "Why does my store show the wrong currency on mobile?",
+  "I was charged twice this month, I want a refund",
+  "Your app broke my store!! Fix it now",
+  "Can I talk to a real person?",
+];
+
+const initial = () => (store.S?.settings.botName || "T").trim().charAt(0).toUpperCase();
+
+export function pvOpen() {
+  $("#pv").classList.add("open");
+  overlayState();
+  setTimeout(() => $("#pvText").focus(), 60);
+}
+export function pvClose() {
+  $("#pv").classList.remove("open");
+  overlayState();
+}
+export function overlayState() {
+  const docked = getComputedStyle($("#pv")).position === "sticky";
+  const pvOverlay = $("#pv").classList.contains("open") && !docked;
+  $("#scrim").classList.toggle("on", pvOverlay || $("#side").classList.contains("open"));
+}
+
+function botMsg(m, i) {
+  const r = m.meta;
+  let h = `<div class="bot"><span class="av" aria-hidden="true">${esc(initial())}</span><div><div class="msg b">${esc(m.content)}</div>`;
+  if (r?.feedback && !m.fbDone) {
+    h += `<div class="picker" role="group" aria-label="${esc(r.feedback.text)}"><span class="pq">${esc(r.feedback.text)}</span>
+<button type="button" data-act="pvFb" data-i="${i}" data-v="yes">${esc(r.feedback.yes)}</button><button type="button" data-act="pvFb" data-i="${i}" data-v="no">${esc(r.feedback.no)}</button></div>`;
+  }
+  if (r) {
+    h += `<div class="trace"><div class="chips">${chipsFor({ act: r.action, cat: r.category, urg: r.urgent, gap: r.knowledge_gap })}</div>
+<div>Sources: ${srcLinks(r.sources)}</div>
+<div><button type="button" class="lk" data-act="pvImprove" data-i="${i}">Improve this answer</button> <span class="muted">${(r.ms / 1000).toFixed(1)} s</span></div></div>`;
+  } else if (m.note) {
+    h += `<div class="trace"><div>${esc(m.note)}</div></div>`;
+  }
+  return h + `</div></div>`;
+}
+
+export function pvRender() {
+  const log = $("#pvLog");
+  if (!P.msgs.length) {
+    log.innerHTML = `<div class="starters"><p>Type a question customers often ask, or try one:</p>${STARTERS.map((s) => `<button type="button" data-act="pvStarter">${esc(s)}</button>`).join("")}</div>`;
+    return;
+  }
+  log.innerHTML =
+    P.msgs
+      .map((m, i) => (m.role === "user" ? `<div class="msg u">${esc(m.content)}</div>` : m.role === "error" ? `<div class="pv-err">${esc(m.content)}</div>` : botMsg(m, i)))
+      .join("") + (P.busy ? `<div class="bot"><span class="av" aria-hidden="true">${esc(initial())}</span><div class="msg b typing" aria-label="The bot is replying"><i></i><i></i><i></i></div></div>` : "");
+  log.scrollTop = log.scrollHeight;
+}
+
+export async function pvAsk(text) {
+  text = String(text || "").trim();
+  if (!text || P.busy) return;
+  pvOpen();
+  P.msgs.push({ role: "user", content: text });
+  P.busy = true;
+  pvRender();
+  try {
+    const history = P.msgs.filter((m) => m.role === "user" || m.role === "assistant").map((m) => ({ role: m.role, content: m.content }));
+    const r = await api("/api/test", { messages: history, handedOff: $("#pvHand").checked });
+    P.msgs.push({ role: "assistant", content: r.reply, meta: r, q: text });
+    if (r.action === "handoff") $("#pvHand").checked = true;
+  } catch (e) {
+    P.msgs.push({ role: "error", content: `Couldn't test: ${e.message}` });
+  }
+  P.busy = false;
+  pvRender();
+}
+
+A.pvOpen = () => pvOpen();
+A.pvClose = () => pvClose();
+A.pvReset = () => {
+  P.msgs = [];
+  $("#pvHand").checked = false;
+  pvRender();
+  $("#pvText").focus();
+};
+A.pvStarter = (el) => pvAsk(el.textContent);
+A.tryQ = (el) => pvAsk(el.dataset.q);
+A.pvImprove = (el) => {
+  const m = P.msgs[+el.dataset.i];
+  openImprove({ q: m.q, a: m.content, sources: m.meta?.sources || [] });
+};
+A.pvFb = (el) => {
+  const m = P.msgs[+el.dataset.i];
+  m.fbDone = true;
+  if (el.dataset.v === "yes") {
+    P.msgs.push({ role: "user", content: m.meta.feedback.yes });
+    P.msgs.push({ role: "assistant", content: m.meta.feedback.thanks, note: "Recorded: the customer confirmed it's solved." });
+    pvRender();
+  } else {
+    pvAsk(m.meta.feedback.no);
+  }
+};
+
+export function initPreview() {
+  const ta = $("#pvText");
+  $("#pvForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = ta.value;
+    ta.value = "";
+    ta.style.height = "";
+    pvAsk(v);
+  });
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      $("#pvForm").requestSubmit();
+    }
+  });
+  ta.addEventListener("input", () => {
+    ta.style.height = "";
+    ta.style.height = `${Math.min(140, ta.scrollHeight)}px`;
+  });
+  pvRender();
+}

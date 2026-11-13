@@ -1,0 +1,9 @@
+# Chép file này thành .dev.vars rồi điền giá trị để chạy `npm run dev` ở máy.
+# .dev.vars đã nằm trong .gitignore, không bao giờ bị đẩy lên git.
+# Bản chạy thật trên Cloudflare lấy các khoá này ở Settings → Variables and Secrets, không đọc file này.
+
+CRISP_IDENTIFIER=
+CRISP_KEY=
+CRISP_HOOK_SECRET=
+OPENAI_API_KEY=
+ADMIN_KEY=

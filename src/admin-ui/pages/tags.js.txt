@@ -1,0 +1,98 @@
+// Tags: the issue tags the AI picks for each conversation, when to tag, status segment names.
+import { $, A, api, busy, closeModal, confirmBox, esc, getAn, guard, header, modal, n, plural, R, refresh, setMain, store, sw, toast } from "../core.js";
+
+R.tags = async () => {
+  const S = store.S;
+  const live = guard();
+  const a = await getAn(S.month).catch(() => null);
+  if (!live()) return;
+  const count = (k) => a?.topics.find((t) => t.key === k)?.conv || 0;
+  const T = S.tags;
+  const segIn = (id, k, label) => `<label class="fl" for="${id}" style="margin-top:0">${label}</label><input class="in" id="${id}" value="${esc(T.segments[k])}" maxlength="40" style="margin-bottom:12px">`;
+  setMain(`${header("Tags", "The bot adds one tag to each conversation in Crisp so you can report by topic. The AI reads \"Use when\" to pick a tag, so the clearer it is, the more accurate the tags.")}
+<section class="sec"><div class="sec-h"><h2>Tag list <span class="cnt">${T.items.length}/${S.meta.maxTags}</span></h2><button type="button" class="btn sm pri" data-act="tagNew">Add tag</button></div>
+<div class="rows">${T.items
+    .map(
+      (t) => `<div class="row">${sw(t.enabled, "tagToggle", `data-k="${esc(t.key)}" ${t.key === "other" ? "disabled" : ""}`, "Tag is on")}
+<div class="grow"><p class="t"><button type="button" class="lk" data-act="tagEdit" data-k="${esc(t.key)}">${esc(t.label)}</button> <span class="chip c-tag">${esc(T.prefix + t.key)}</span></p>
+<p class="sub clamp">Use when: ${esc(t.desc)}</p><p class="meta">${plural(count(t.key), "conversation")} this month${t.key === "other" ? ", the default tag, so it's always on" : ""}</p></div>
+<div class="acts">${t.key === "other" ? "" : `<button type="button" class="btn ghost sm danger" data-act="tagDel" data-k="${esc(t.key)}">Delete</button>`}</div></div>`
+    )
+    .join("")}</div></section>
+<section class="sec"><h2>How tagging works</h2>
+<div class="form">
+<div class="fr"><div class="lb">When to tag</div><div class="radios">
+<label class="radio"><input type="radio" name="timing" value="first" ${T.timing === "first" ? "checked" : ""}><div><b>On the bot's first reply</b><span>The team sees the tag as soon as they pick up the chat. Conversations the team handles alone are tagged when resolved.</span></div></label>
+<label class="radio"><input type="radio" name="timing" value="resolve" ${T.timing === "resolve" ? "checked" : ""}><div><b>When the conversation is resolved</b><span>The AI reads the whole conversation before choosing, so it's more accurate, but there's no tag while the chat is live.</span></div></label>
+</div></div>
+<div class="fr"><label for="tp">Prefix<small>Goes before the tag key in Crisp</small></label><div><input class="in" id="tp" value="${esc(T.prefix)}" maxlength="20" style="max-width:220px"><p class="meta" id="tpx">Example: ${esc(T.prefix)}setup</p></div></div>
+<div class="fr"><div class="lb">Status segments<small>The bot adds these to conversations</small></div><div>
+${segIn("sgh", "handoff", "Bot handed off to the team")}${segIn("sgu", "urgent", "Angry customer or store badly broken")}${segIn("sgp", "paused", "Team joined, bot stays quiet")}</div></div>
+</div>
+<div class="savebar"><p class="meta">If you change the prefix or a segment name, older conversations keep the old name in Crisp.</p><button type="button" class="btn pri" data-act="tagSettingsSave">Save tagging settings</button></div></section>`);
+  $("#tp").oninput = (e) => ($("#tpx").textContent = `Example: ${e.target.value.trim().toLowerCase()}setup`);
+};
+
+function openTag(key) {
+  const S = store.S;
+  const t = S.tags.items.find((x) => x.key === key) || { key: "", label: "", desc: "", enabled: true };
+  modal(
+    key ? `Edit tag ${S.tags.prefix}${key}` : "Add tag",
+    `${
+      key
+        ? ""
+        : `<label class="fl" for="tk">Tag key</label><input class="in" id="tk" maxlength="30" placeholder="for example: shipping-app" autocomplete="off">
+<p class="meta">Lowercase letters, numbers, - or _. In Crisp it shows as <b id="tkx">${esc(S.tags.prefix)}…</b>. The key can't be changed after you create it.</p>`
+    }
+<label class="fl" for="tl">Name</label><input class="in" id="tl" value="${esc(t.label)}" maxlength="60" placeholder="For example: Conflict with a shipping app">
+<label class="fl" for="td">Use when</label><textarea class="in" id="td" rows="4" maxlength="400" placeholder="Describe when a conversation belongs to this tag, with example questions if you like. The AI reads this to pick the tag.">${esc(t.desc)}</textarea>
+<label class="chk"><input type="checkbox" id="te" ${t.enabled ? "checked" : ""} ${t.key === "other" ? "disabled" : ""}> The bot uses this tag</label>`,
+    `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="tagSave" data-k="${esc(key || "")}">Save tag</button>`,
+    {
+      onOpen(d) {
+        const k = $("#tk", d);
+        if (k) k.oninput = () => ($("#tkx", d).textContent = S.tags.prefix + (k.value.trim().toLowerCase() || "…"));
+        (k || $("#tl", d)).focus();
+      },
+    }
+  );
+}
+
+async function saveTags(body, msg) {
+  const r = await api("/api/tags", body);
+  store.S.tags = r.tags;
+  refresh();
+  toast(msg);
+}
+
+A.tagNew = () => openTag(null);
+A.tagEdit = (el) => openTag(el.dataset.k);
+A.tagSave = (el) =>
+  busy(el, async () => {
+    const key = el.dataset.k || $("#tk").value;
+    await saveTags({ op: "save", item: { key, label: $("#tl").value, desc: $("#td").value, enabled: $("#te").checked } }, "Tag saved. The bot uses it from the next conversation.");
+    closeModal();
+  });
+A.tagToggle = (el) =>
+  busy(el, () => {
+    const t = store.S.tags.items.find((x) => x.key === el.dataset.k);
+    return saveTags({ op: "save", item: { ...t, enabled: !t.enabled } }, t.enabled ? "Tag turned off" : "Tag turned on");
+  });
+A.tagDel = async (el) => {
+  const S = store.S;
+  const k = el.dataset.k;
+  if (!(await confirmBox("Delete tag?", `The bot will stop adding ${S.tags.prefix}${k}. Older conversations keep this tag in Crisp.`))) return;
+  await saveTags({ op: "delete", key: k }, "Tag deleted");
+};
+A.tagSettingsSave = (el) =>
+  busy(el, () =>
+    saveTags(
+      {
+        op: "settings",
+        timing: document.querySelector('input[name="timing"]:checked')?.value,
+        prefix: $("#tp").value,
+        segments: { handoff: $("#sgh").value, urgent: $("#sgu").value, paused: $("#sgp").value },
+      },
+      "Tagging settings saved"
+    )
+  );

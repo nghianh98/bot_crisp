@@ -1,0 +1,156 @@
+// Settings: bot name, language, mode, working hours, email, AI model, connections, backup.
+import { $, $$, A, api, busy, confirmBox, esc, fmtTime, guard, header, pad, R, setMain, store, toast } from "../core.js";
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const TIMES = Array.from({ length: 49 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`);
+const MODES = [
+  ["off", "Off", "The bot doesn't reply to anyone. Only your team answers customers."],
+  ["offline", "When team is offline", "The bot only replies when nobody on the team is online in Crisp."],
+  ["always", "Always on", "The bot replies to every message, even when the team is online."],
+];
+
+export function parseBH(s) {
+  const m = String(s || "").trim().match(/^([A-Za-z,\- ]+)\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const idx = (x) => DAYS.findIndex((d) => d.toLowerCase() === x.trim().slice(0, 3).toLowerCase());
+  const days = new Set();
+  for (const part of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+    const [a, b] = part.split("-").map(idx);
+    if (a < 0 || b === -1) return null;
+    if (b === undefined) days.add(a);
+    else for (let d = a; ; d = (d + 1) % 7) { days.add(d); if (d === b) break; }
+  }
+  return { days, open: `${pad(m[2])}:${m[3]}`, close: `${pad(m[4])}:${m[5]}` };
+}
+
+export function buildBH(days, open, close) {
+  const ds = [...days].sort((a, b) => a - b);
+  if (!ds.length) return "";
+  const parts = [];
+  let start = ds[0];
+  let prev = ds[0];
+  for (const d of [...ds.slice(1), 99]) {
+    if (d === prev + 1) { prev = d; continue; }
+    parts.push(start === prev ? DAYS[start] : `${DAYS[start]}-${DAYS[prev]}`);
+    start = prev = d;
+  }
+  return `${parts.join(",")} ${open}-${close}`;
+}
+
+R.settings = () => {
+  const S = store.S;
+  const s = S.settings;
+  const bh = parseBH(s.businessHours) || { days: new Set(), open: "08:00", close: "24:00" };
+  const src = (k) => (S.sources[k] === "cloudflare" ? `<small>Currently read from a Cloudflare variable; saving here uses the new value instead.</small>` : "");
+  const sel = (id, v) => `<select class="in" id="${id}" style="width:auto">${TIMES.map((t) => `<option ${t === v ? "selected" : ""}>${t}</option>`).join("")}</select>`;
+  setMain(`${header("Settings", "Changes reach real customers within about a minute.")}
+<section class="sec"><h2>Bot</h2><div class="form">
+<div class="fr"><label for="bn">Bot name<small>Customers see this name in the chat</small>${src("botName")}</label><input class="in" id="bn" value="${esc(s.botName)}" maxlength="40"></div>
+<div class="fr"><label for="lg">Reply language${src("language")}</label><select class="in" id="lg">
+<option value="English" ${s.language === "English" ? "selected" : ""}>Always reply in English</option>
+<option value="auto" ${/^auto$/i.test(s.language) ? "selected" : ""}>Match the customer's language</option>
+${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<option value="${esc(s.language)}" selected>${esc(s.language)}</option>` : ""}</select></div>
+<div class="fr"><div class="lb">Mode</div><div class="radios">${MODES.map(([v, t, d]) => `<label class="radio"><input type="radio" name="mode" value="${v}" ${s.mode === v ? "checked" : ""}><div><b>${t}</b><span>${d}</span></div></label>`).join("")}</div></div>
+</div></section>
+<section class="sec"><h2>Support team</h2><div class="form">
+<div class="fr"><div class="lb">Working hours<small>Vietnam time (GMT+${S.meta.utcOffset}). Outside these hours the bot tells customers when the team is back.</small>${src("businessHours")}</div><div>
+<div class="days" role="group" aria-label="Working days">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${bh.days.has(i) ? "checked" : ""}><span>${d}</span></label>`).join("")}</div>
+<div class="times">From ${sel("bo", bh.open)} to ${sel("bc", bh.close)}</div>
+<p class="meta" id="bhx"></p></div></div>
+<div class="fr"><label for="em">Support email<small>The bot suggests this email when it hands off</small>${src("supportEmail")}</label><input class="in" id="em" type="email" value="${esc(s.supportEmail)}" maxlength="120" placeholder="support@…"></div>
+</div></section>
+<section class="sec"><h2>AI</h2><div class="form">
+<div class="fr"><label for="md">OpenAI model${src("model")}</label><div><input class="in" id="md" value="${esc(s.model)}" list="models" maxlength="60" style="max-width:280px"><datalist id="models"><option value="gpt-6-luna"><option value="gpt-6.1-terra"></datalist>
+<p class="meta">gpt-6-luna is cheap and fast. Stronger models give more thorough answers but cost more.</p></div></div>
+<div class="fr"><label for="ef">Reasoning effort</label><select class="in" id="ef" style="width:auto">${[["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"], ["high", "High"]].map(([v, l]) => `<option value="${v}" ${s.effort === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+</div></section>
+<div class="savebar"><p class="meta">You can also switch the bot mode quickly in the box on the left.</p><button type="button" class="btn pri" data-act="setSave">Save settings</button></div>
+
+<section class="sec"><h2>Crisp connection</h2><div class="form">
+<div class="fr"><label for="wh">Webhook link<small>Paste into Crisp Marketplace → Transtore Bot → Settings → Events</small></label><div class="copy"><input class="in" id="wh" value="${esc(S.webhookUrl)}" readonly><button type="button" class="btn" data-act="copyHook">Copy</button></div></div>
+<div class="fr"><div class="lb">Secret keys<small>Set in Cloudflare → transtore-bot → Settings → Variables and secrets</small></div><div class="rows">${S.health
+    .map((h) => `<div class="row"><span class="st ${h.ok ? "ok" : "bad"}" aria-hidden="true">${h.ok ? "✓" : "!"}</span><div class="grow"><p class="t">${esc(h.label)}</p><p class="sub">${esc(h.ok ? h.detail || "Set" : h.fix)}</p></div></div>`)
+    .join("")}</div></div>
+</div></section>
+<section class="sec"><h2>Backup</h2><div class="form"><div class="fr"><div class="lb">All bot settings<small>Snippets, guidance, tags, settings and the list of articles that are off</small></div>
+<div class="toolbar" style="margin:0"><a class="btn" href="/api/export" download>Download backup</a><button type="button" class="btn" data-act="importPick">Restore from file</button><input type="file" id="impf" accept="application/json,.json" hidden></div></div></div></section>`);
+
+  const showBH = () => {
+    const days = new Set($$(".days input:checked").map((i) => +i.value));
+    const v = buildBH(days, $("#bo").value, $("#bc").value);
+    $("#bhx").textContent = v ? `Saved as: ${v}` : "No days selected: the bot won't tell customers your working hours.";
+    return v;
+  };
+  $$(".days input, #bo, #bc").forEach((i) => (i.onchange = showBH));
+  showBH();
+  $("#impf").onchange = (e) => importFile(e.target.files[0]);
+  R.settings.bh = showBH;
+};
+
+A.setSave = (el) =>
+  busy(el, async () => {
+    const S = store.S;
+    const bh = R.settings.bh();
+    if (bh && $("#bo").value >= $("#bc").value) throw new Error("The end time must be after the start time");
+    const settings = {
+      botName: $("#bn").value,
+      language: $("#lg").value,
+      mode: document.querySelector('input[name="mode"]:checked')?.value,
+      businessHours: bh,
+      supportEmail: $("#em").value.trim(),
+      model: $("#md").value.trim(),
+      effort: $("#ef").value,
+    };
+    const r = await api("/api/settings", { settings });
+    Object.assign(S, r);
+    window.dispatchEvent(new Event("tb:side"));
+    R.settings();
+    toast("Settings saved");
+  });
+
+A.copyHook = async () => {
+  try {
+    await navigator.clipboard.writeText($("#wh").value);
+    toast("Webhook link copied");
+  } catch {
+    $("#wh").select();
+    toast("Press Ctrl+C (or Cmd+C) to copy");
+  }
+};
+A.importPick = () => $("#impf").click();
+
+async function importFile(file) {
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast("Couldn't read that file. Choose a .json file from the Download backup button.", { err: true });
+    return;
+  }
+  const when = data.exportedAt ? fmtTime(Date.parse(data.exportedAt)) : "an unknown date";
+  if (!(await confirmBox("Restore settings?", `All current snippets, guidance, tags and settings will be replaced with the backup from ${when}. Download a backup of the current setup first.`, "Restore", true))) return;
+  try {
+    await api("/api/import", { data });
+    toast("Restored. Reloading…");
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    toast(e.message, { err: true });
+  }
+}
+
+R.changelog = async () => {
+  const S = store.S;
+  setMain(`${header("Change log", "")}<p class="loading">Loading…</p>`);
+  const live = guard();
+  S.changelog = (await api("/api/state")).changelog;
+  if (!live()) return;
+  setMain(`${header("Change log", "Who changed what in the admin, newest first. Names come from the Your name field at sign-in.")}
+<section class="sec">${
+    S.changelog.length
+      ? `<table class="tbl"><thead><tr><th style="width:120px">Time</th><th style="width:140px">Changed by</th><th>Change</th></tr></thead><tbody>${S.changelog
+          .map((c) => `<tr><td class="num" style="text-align:left">${fmtTime(c.t)}</td><td>${esc(c.who)}</td><td>${esc(c.what)}</td></tr>`)
+          .join("")}</tbody></table>`
+      : `<div class="rows"><div class="empty">No changes yet.</div></div>`
+  }</section>`);
+};

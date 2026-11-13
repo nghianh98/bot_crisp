@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transtore Bot Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ui}}/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="btn ghost" type="button" data-act="sideOpen" aria-label="Open menu">☰</button>
+  <span class="mark" aria-hidden="true">T</span>
+  <b class="top-name">Transtore Bot</b>
+</header>
+
+<div class="app" id="app">
+  <aside class="side" id="side" aria-label="Menu">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">T</span>
+      <div><b id="botName">Transtore Bot</b><small>Admin</small></div>
+    </div>
+
+    <div class="mode">
+      <label for="modeSel"><span class="dot" id="modeDot"></span><span id="modeNote">Bot mode</span></label>
+      <select id="modeSel" aria-label="Bot mode">
+        <option value="off">Off</option>
+        <option value="offline">When team is offline</option>
+        <option value="always">Always on</option>
+      </select>
+    </div>
+
+    <nav id="nav">
+      <a href="#overview">Overview</a>
+      <p class="ng">Train</p>
+      <a href="#content">Knowledge</a>
+      <a href="#guidance">Guidance</a>
+      <a href="#tags">Tags</a>
+      <a href="#escalation">Escalation</a>
+      <a href="#followup">Feedback &amp; follow-up</a>
+      <p class="ng">Analyze</p>
+      <a href="#performance">Performance</a>
+      <a href="#conversations">Conversations</a>
+      <a href="#suggestions">Suggestions <span class="badge" id="nPending" hidden></span></a>
+      <p class="ng">System</p>
+      <a href="#settings">Settings</a>
+      <a href="#changelog">Change log</a>
+    </nav>
+
+    <div class="me"><span id="who"></span><a href="/logout">Sign out</a></div>
+  </aside>
+
+  <main class="main" id="main" tabindex="-1"></main>
+
+  <section class="pv" id="pv" aria-label="Test the bot">
+    <header class="pv-h">
+      <div>
+        <h2>Test the bot</h2>
+        <p>Uses the saved knowledge and guidance. Nothing is sent to real customers.</p>
+      </div>
+      <div class="pv-a">
+        <button class="btn ghost sm" type="button" data-act="pvReset">Reset</button>
+        <button class="btn ghost sm pv-close" type="button" data-act="pvClose" aria-label="Close test panel">✕</button>
+      </div>
+    </header>
+    <label class="pv-opt"><input type="checkbox" id="pvHand"> Pretend the conversation was already handed off</label>
+    <div class="pv-log" id="pvLog" aria-live="polite"></div>
+    <form class="pv-in" id="pvForm">
+      <textarea id="pvText" rows="1" placeholder="Ask like a customer would" aria-label="Customer question"></textarea>
+      <button class="btn pri" type="submit">Send</button>
+    </form>
+  </section>
+</div>
+
+<button class="fab" id="fab" type="button" data-act="pvOpen"><span class="av" aria-hidden="true">T</span>Test the bot</button>
+<div class="scrim" id="scrim" data-act="closeOverlays"></div>
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script type="module" src="{{ui}}/main.js"></script>
+</body>
+</html>

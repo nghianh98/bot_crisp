@@ -1,0 +1,82 @@
+// Suggestions: questions the bot had no knowledge for; AI grouping; create a snippet or dismiss.
+import { A, api, busy, C, esc, fmtClock, fmtDay, getLog, guard, header, monthLabel, monthNav, n, plural, R, refresh, setMain, store, toast, UI } from "../core.js";
+import { openImprove } from "../components.js";
+
+R.suggestions = async () => {
+  const S = store.S;
+  const m = UI.month || S.month;
+  const head = header("Suggestions", "Questions customers asked that the bot had no knowledge to answer. Add a snippet so the bot can answer next time.", monthNav(m));
+  setMain(`${head}<p class="loading">Loading…</p>`);
+  const live = guard();
+  const items = await getLog(m);
+  if (!live()) return;
+  const pending = items.filter((x) => x.gap && !x.st).reverse();
+  const done = items.filter((x) => x.gap && x.st).reverse();
+  if (m === S.month && S.pending !== pending.length) {
+    S.pending = pending.length;
+    window.dispatchEvent(new Event("tb:side"));
+  }
+  const groups = UI.groups[m];
+  const byId = Object.fromEntries(items.map((x) => [x.id, x]));
+  const row = (x, isDone) =>
+    `<div class="row conv"><div class="when"><b>${x.t ? fmtDay(x.t) : ""}</b>${x.t ? fmtClock(x.t) : ""}</div><div class="grow"><p class="qtxt">${esc(x.q)}</p>${isDone ? `<div class="chips">${x.st === "fixed" ? `<span class="chip c-answer">Snippet added</span>` : `<span class="chip">Dismissed</span>`}</div>` : ""}</div>
+<div class="acts">${
+      isDone
+        ? `<button type="button" class="btn ghost sm" data-act="sugUndo" data-id="${esc(x.id)}">Undo</button>`
+        : `<button type="button" class="btn sm pri" data-act="sugFix" data-id="${esc(x.id)}">Create snippet</button><button type="button" class="btn ghost sm" data-act="sugSkip" data-id="${esc(x.id)}">Dismiss</button>`
+    }</div></div>`;
+
+  setMain(`${head}
+<section class="sec"><div class="sec-h"><h2>Missing knowledge, grouped</h2><button type="button" class="btn sm" data-act="aiGroup" ${pending.length < 2 ? "disabled" : ""}>${groups ? "Group again" : "Group with AI"}</button></div>
+${
+  groups
+    ? groups.length
+      ? `<div class="rows groups">${groups
+          .map((g, i) => {
+            const qs = g.ids.map((id) => byId[id]).filter((x) => x && !x.st);
+            if (!qs.length) return "";
+            return `<div class="row"><div class="grow"><p class="t">${esc(g.title)} <span class="chip c-gap">${plural(qs.length, "question")}</span></p><p class="sub">Suggested snippet question: ${esc(g.question)}</p>
+<ul class="samples">${qs.slice(0, 3).map((x) => `<li>${esc(x.q)}</li>`).join("")}</ul></div>
+<div class="acts"><button type="button" class="btn sm pri" data-act="sugGroup" data-i="${i}">Create snippet for group</button></div></div>`;
+          })
+          .join("") || `<div class="empty">Every group has been handled.</div>`}</div>`
+      : `<div class="rows"><div class="empty">The AI didn't find any groups.</div></div>`
+    : `<p class="hint">The AI reads the open questions and groups them by the knowledge that's missing, so you can write one snippet for the whole group.${pending.length < 2 ? " You need at least 2 open questions." : ""}</p>`
+}</section>
+<section class="sec"><h2>Open <span class="cnt">${n(pending.length)}</span></h2><div class="rows">${
+    pending.length ? pending.map((x) => row(x, false)).join("") : `<div class="empty">Nothing left for ${monthLabel(m)}. The bot has knowledge for every question customers asked.</div>`
+  }</div></section>
+${done.length ? `<section class="sec"><details><summary class="t" style="cursor:pointer">Handled (${n(done.length)})</summary><div class="rows" style="margin-top:10px">${done.map((x) => row(x, true)).join("")}</div></details></section>` : ""}`);
+};
+
+const month = () => UI.month || store.S.month;
+
+async function setStatus(ids, st) {
+  const m = month();
+  await api("/api/log", { month: m, ids, st });
+  for (const x of C.log[m] || []) if (ids.includes(x.id)) st ? (x.st = st) : delete x.st;
+  refresh();
+}
+
+A.aiGroup = (el) =>
+  busy(el, async () => {
+    el.textContent = "The AI is reading…";
+    const r = await api("/api/suggest", { month: month() });
+    UI.groups[month()] = r.groups;
+    refresh();
+  });
+A.sugFix = (el) => {
+  const x = (C.log[month()] || []).find((i) => i.id === el.dataset.id);
+  openImprove({ q: x.q, a: x.a, sources: x.src || [], fix: { month: month(), ids: [x.id] } });
+};
+A.sugGroup = (el) => {
+  const g = UI.groups[month()][+el.dataset.i];
+  const open = g.ids.filter((id) => (C.log[month()] || []).some((x) => x.id === id && !x.st));
+  openImprove({ q: g.question, fix: { month: month(), ids: open } });
+};
+A.sugSkip = (el) =>
+  busy(el, async () => {
+    await setStatus([el.dataset.id], "dismissed");
+    toast("Question dismissed");
+  });
+A.sugUndo = (el) => busy(el, () => setStatus([el.dataset.id], null));

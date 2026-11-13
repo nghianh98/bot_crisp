@@ -1,0 +1,126 @@
+// Guidance: tell the bot how to talk and handle situations, grouped, with templates to start from.
+import { $, A, R, ago, api, busy, closeModal, confirmBox, esc, header, modal, refresh, setMain, store, sw, toast } from "../core.js";
+
+const TEMPLATES = {
+  tone: [
+    ["Friendly", "Friendly and warm, like a helpful colleague. Use the customer's name when you know it."],
+    ["Professional", "Professional and polite. Clear, calm and confident. No slang."],
+    ["Very concise", "Very concise: give the answer in the first sentence, no small talk."],
+    ["Allow emoji", "You may use at most one friendly emoji per message (for example 🙂 or 🙌), never in apologies."],
+    ["Patient with beginners", "Be patient with beginners: explain Shopify terms simply and never make the customer feel stupid."],
+    ["Don't over-apologise", "Apologise at most once per conversation, then focus on the solution."],
+  ],
+  clarify: [
+    ["Ask when the question is vague", "If the question is vague (for example 'it doesn't work'), ask one short question to understand what they mean before answering."],
+    ["Ask for their plan", "When the answer depends on the customer's plan, ask which Transtore plan they are on."],
+    ["Ask for the theme on display issues", "For display problems on the storefront, ask which theme they use before suggesting steps."],
+  ],
+  content: [
+    ["Don't compare competitors", "Do not compare Transtore with other apps unless the customer asks."],
+    ["Link pricing for price questions", "When the customer asks about price or plans, always include the pricing page link."],
+    ["Don't promise upcoming features", "Never promise features or release dates. Say the team has noted the request."],
+  ],
+  handoff: [
+    ["Say when the team replies", "When handing off, tell the customer the team usually replies within a few hours during working hours."],
+    ["Offer email outside hours", "When handing off outside working hours, also offer the support email."],
+  ],
+  other: [
+    ["Refunds", "If the customer asks for a refund, do not promise anything. Collect the store URL and the reason, then hand off."],
+    ["Feature requests", "If the customer asks for a feature we do not have, thank them and say the request is passed to the product team."],
+  ],
+};
+
+const FIXED = [
+  "Answers only from snippets, the help center and website pages; never invents features, prices or links.",
+  "Replies in the language chosen in Settings.",
+  "Format: the first line answers directly, steps are numbered, the guide link goes on the last line, no markdown.",
+  "Never asks for passwords, staff logins, API keys or card numbers.",
+  "Angry customers: never goes silent or argues; apologises once and says when the team will reply.",
+];
+
+const langName = () => (/^auto$/i.test(store.S.settings.language) ? "the customer's language" : store.S.settings.language);
+
+R.guidance = () => {
+  const S = store.S;
+  const cats = S.meta.guidanceCats;
+  const row = (g) => `<div class="row">${sw(g.enabled, "gToggle", `data-id="${esc(g.id)}"`, "The bot follows this guidance")}
+<div class="grow"><button type="button" class="lk t" data-act="gEdit" data-id="${esc(g.id)}">${esc(g.title || g.text.split("\n")[0].slice(0, 80))}</button>${g.title ? `<p class="sub clamp">${esc(g.text)}</p>` : ""}
+<p class="meta">Edited ${ago(g.upd)}${g.by ? ` by ${esc(g.by)}` : ""}</p></div>
+<div class="acts"><button type="button" class="btn ghost sm danger" data-act="gDel" data-id="${esc(g.id)}">Delete</button></div></div>`;
+  setMain(`${header("Guidance", `Tell the bot how to talk and how to handle situations, one idea per item. English or Vietnamese both work; the bot still replies to customers in ${esc(langName())}.`)}
+${Object.entries(cats)
+  .map(([k, c]) => {
+    const items = S.guidance.filter((g) => g.cat === k);
+    return `<section class="sec"><div class="sec-h"><h2>${esc(c.label)}</h2><button type="button" class="btn sm" data-act="gNew" data-cat="${k}">Add</button></div>
+<p class="hint">${esc(c.hint)}</p><div class="rows">${items.length ? items.map(row).join("") : `<div class="empty">No guidance yet. <button type="button" class="lk" data-act="gNew" data-cat="${k}">Start from a template</button></div>`}</div></section>`;
+  })
+  .join("")}
+<section class="sec"><h2>Fixed rules</h2><p class="hint">The bot always keeps these rules; guidance above can't override them. Changing them needs a code change.</p>
+<div class="rows">${FIXED.map((t) => `<div class="row"><span class="st ok" aria-hidden="true">✓</span><div class="grow">${esc(t)}</div></div>`).join("")}</div></section>`);
+};
+
+function openGuidance(id, cat) {
+  const S = store.S;
+  const g = S.guidance.find((x) => x.id === id) || { cat: cat || "other", title: "", text: "", enabled: true };
+  const cats = S.meta.guidanceCats;
+  const tpl = (c) => (TEMPLATES[c] || []).map(([t], i) => `<button type="button" data-act="gTpl" data-c="${c}" data-i="${i}">+ ${esc(t)}</button>`).join("");
+  modal(
+    id ? "Edit guidance" : "New guidance",
+    `<label class="fl" for="gc">Group</label>
+<select class="in" id="gc">${Object.entries(cats).map(([k, c]) => `<option value="${k}" ${k === g.cat ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select>
+${id ? "" : `<p class="meta" style="margin-top:12px">Templates, click one to fill in, then edit as you like:</p><div class="tpl" id="gtpl">${tpl(g.cat)}</div>`}
+<label class="fl" for="gt">Short name <span class="muted">(helps the team find it; the bot doesn't read it)</span></label>
+<input class="in" id="gt" value="${esc(g.title)}" maxlength="80" placeholder="For example: Don't promise release dates">
+<label class="fl" for="gx">What the bot should do</label>
+<textarea class="in" id="gx" rows="5" maxlength="3000" placeholder="Write it as: if the customer asks X, do Y.">${esc(g.text)}</textarea>
+<label class="chk"><input type="checkbox" id="ge" ${g.enabled ? "checked" : ""}> The bot follows this guidance</label>`,
+    `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="gSave" data-id="${esc(id || "")}">Save guidance</button>`,
+    {
+      onOpen(d) {
+        const sel = $("#gc", d);
+        sel.onchange = () => {
+          const box = $("#gtpl", d);
+          if (box) box.innerHTML = tpl(sel.value);
+        };
+        $(id ? "#gx" : "#gt", d).focus();
+      },
+    }
+  );
+}
+
+A.gNew = (el) => openGuidance(null, el.dataset.cat);
+A.gEdit = (el) => openGuidance(el.dataset.id);
+A.gTpl = (el) => {
+  const [title, text] = TEMPLATES[el.dataset.c][+el.dataset.i];
+  $("#gt").value = title;
+  $("#gx").value = text;
+  $("#gx").focus();
+};
+A.gSave = (el) =>
+  busy(el, async () => {
+    const S = store.S;
+    const item = { id: el.dataset.id || undefined, cat: $("#gc").value, title: $("#gt").value, text: $("#gx").value, enabled: $("#ge").checked };
+    const r = await api("/api/guidance", { op: "save", item });
+    S.guidance = r.guidance;
+    closeModal();
+    refresh();
+    toast("Guidance saved. Try it in the Test panel.");
+  });
+A.gToggle = (el) =>
+  busy(el, async () => {
+    const S = store.S;
+    const g = S.guidance.find((x) => x.id === el.dataset.id);
+    const r = await api("/api/guidance", { op: "save", item: { ...g, enabled: !g.enabled } });
+    S.guidance = r.guidance;
+    refresh();
+    toast(g.enabled ? "Guidance turned off" : "Guidance turned on");
+  });
+A.gDel = async (el) => {
+  const S = store.S;
+  const g = S.guidance.find((x) => x.id === el.dataset.id);
+  if (!(await confirmBox("Delete guidance?", `"${g.title || g.text.slice(0, 60)}" will be deleted.`))) return;
+  const r = await api("/api/guidance", { op: "delete", id: g.id });
+  S.guidance = r.guidance;
+  refresh();
+  toast("Guidance deleted");
+};

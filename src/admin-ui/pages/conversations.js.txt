@@ -1,0 +1,66 @@
+// Conversations: what customers asked and what the bot replied; filter, search, improve, open in Crisp.
+import { $, A, C, chipsFor, crispUrl, esc, fmtClock, fmtDay, getLog, guard, header, matches, monthLabel, monthNav, n, R, setMain, store, UI } from "../core.js";
+import { openImprove } from "../components.js";
+
+const FILTERS = {
+  all: ["All", () => true],
+  handoff: ["Handed off", (x) => x.act === "handoff"],
+  gap: ["Missing knowledge", (x) => x.gap],
+  err: ["AI error", (x) => x.err || x.a?.startsWith("Sorry, I couldn't answer that right now.")],
+  urgent: ["Angry customer", (x) => x.urg],
+  down: ["Rated not helpful", (x) => x.fb === "down"],
+  up: ["Rated helpful", (x) => x.fb === "up"],
+};
+
+export function convRow(x) {
+  return `<div class="row conv"><div class="when"><b>${x.t ? fmtDay(x.t) : ""}</b>${x.t ? fmtClock(x.t) : ""}</div>
+<div class="grow"><p class="qtxt">${esc(x.q || "(the customer sent a file or clicked a button)")}</p>
+${x.a ? `<p class="sub clamp ans" data-act="expand" title="Click to see the full reply">${esc(x.a)}</p>` : `<p class="meta">Recorded by the old report, so there's no reply text.</p>`}
+<div class="chips">${chipsFor(x)}</div></div>
+<div class="acts"><button type="button" class="btn sm" data-act="improveLog" data-id="${esc(x.id)}">Improve</button>${
+    x.w && x.sid ? `<a class="btn ghost sm" href="${crispUrl(x)}" target="_blank" rel="noopener">Open in Crisp</a>` : ""
+  }</div></div>`;
+}
+
+function sessionFrom(q) {
+  return q.match(/session_[0-9a-f-]{20,}/i)?.[0] || null;
+}
+
+R.conversations = async (arg) => {
+  if (arg && FILTERS[arg]) UI.cf = arg;
+  const m = UI.month || store.S.month;
+  const head = header("Conversations", "Every reply the bot sent to customers. Click Improve to fix an answer for next time.", monthNav(m));
+  setMain(`${head}<p class="loading">Loading conversations…</p>`);
+  const live = guard();
+  const items = (await getLog(m)).filter((x) => !x.legacy).slice().reverse();
+  if (!live()) return;
+  setMain(`${head}
+<div class="toolbar"><div class="fchips" role="group" aria-label="Filter">${Object.entries(FILTERS)
+    .map(([k, [l, f]]) => `<button type="button" aria-pressed="${UI.cf === k}" data-act="cf" data-v="${k}">${l} (${n(items.filter(f).length)})</button>`)
+    .join("")}</div></div>
+<div class="toolbar"><input class="in search" type="search" id="cvq" value="${esc(UI.cq)}" placeholder="Search the text, or paste a Crisp conversation link" aria-label="Search conversations"></div>
+<section class="sec" style="margin-top:14px"><div class="rows" id="cvlist"></div></section>`);
+  const draw = () => {
+    const sid = sessionFrom(UI.cq);
+    const list = items.filter(FILTERS[UI.cf][1]).filter((x) => (sid ? x.sid === sid : matches(UI.cq, x.q, x.a)));
+    $("#cvlist").innerHTML = list.length
+      ? list.slice(0, 200).map(convRow).join("") + (list.length > 200 ? `<div class="empty">Showing the 200 newest replies. Use search to narrow it down.</div>` : "")
+      : `<div class="empty">${items.length ? "No conversations match." : `No bot replies in ${monthLabel(m)} yet. When the bot replies to customers, the conversations show up here.`}</div>`;
+  };
+  $("#cvq").oninput = (e) => {
+    UI.cq = e.target.value;
+    draw();
+  };
+  draw();
+};
+
+A.cf = (el) => {
+  UI.cf = el.dataset.v;
+  R.conversations();
+};
+A.expand = (el) => el.classList.toggle("open");
+A.improveLog = (el) => {
+  const m = UI.month || store.S.month;
+  const x = (C.log[m] || []).find((i) => i.id === el.dataset.id);
+  if (x) openImprove({ q: x.q, a: x.a, sources: x.src || [], fix: { month: m, ids: [x.id] } });
+};

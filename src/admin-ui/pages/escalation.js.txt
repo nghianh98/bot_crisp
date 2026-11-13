@@ -1,0 +1,47 @@
+// Escalation: when to hand off to the team, what to ask first, what the bot does while the customer waits.
+import { $, $$, A, R, api, busy, esc, header, setMain, store, sw, toast } from "../core.js";
+
+R.escalation = () => {
+  const S = store.S;
+  const E = S.escalation;
+  const M = S.meta;
+  const sg = S.tags.segments;
+  setMain(`${header("Escalation", "Choose when the bot hands a conversation to the team and what it asks the customer first. Click Save to apply.")}
+<section class="sec"><h2>The bot hands off when</h2><div class="rows">${Object.entries(M.triggers)
+    .map(([k, t]) => `<div class="row">${sw(E.triggers[k], "escFlip", `data-k="${k}"`, t.label)}<div class="grow"><p class="t">${esc(t.label)}</p><p class="sub">${esc(t.hint)}</p></div></div>`)
+    .join("")}</div>
+<p class="note">With all of these off, the bot never hands off and always answers itself. The team can still reply in any conversation at any time.</p></section>
+<section class="sec"><h2>Ask for details before handing off</h2><div class="rows"><div class="row">${sw(E.askInfo, "escFlip", `data-k="askInfo"`, "Ask for details before handing off")}
+<div class="grow"><p class="t">Ask the customer once before handing off</p><p class="sub">The bot asks for any missing details in one message, then hands off. If the customer asks for a person, is angry or has a payment dispute, it hands off right away.</p>
+<div class="checks" id="fields">${Object.entries(M.infoFields)
+    .map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}" ${E.fields.includes(k) ? "checked" : ""} ${E.askInfo ? "" : "disabled"}> ${esc(l)}</label>`)
+    .join("")}</div></div></div></div></section>
+<section class="sec"><h2>While the customer waits for the team</h2><div class="rows">
+<div class="row"><div class="grow"><p class="t">The customer keeps messaging</p><p class="sub">The bot reassures them and says when the team will reply, at most once every
+<select class="in inl" id="cd" aria-label="Minutes between reassurance messages">${[1, 2, 5, 10, 30].map((v) => `<option value="${v}" ${E.cooldownMin === v ? "selected" : ""}>${v} min</option>`).join("")}</select>.</p></div></div>
+<div class="row"><div class="grow"><p class="t">Marked in Crisp</p><p class="sub">The conversation gets the <b>${esc(sg.handoff)}</b> segment, plus <b>${esc(sg.urgent)}</b> if the customer is angry. When someone on the team replies, the bot goes quiet and adds <b>${esc(sg.paused)}</b>. Resolving the conversation turns the bot back on. Rename segments on the Tags page.</p></div></div>
+</div></section>
+<div class="savebar"><p class="meta">Changes reach real customers within about a minute.</p><button type="button" class="btn pri" data-act="escSave">Save</button></div>`);
+};
+
+A.escFlip = (el) => {
+  const on = el.getAttribute("aria-checked") !== "true";
+  el.setAttribute("aria-checked", String(on));
+  if (el.dataset.k === "askInfo") $$("#fields input").forEach((i) => (i.disabled = !on));
+};
+
+A.escSave = (el) =>
+  busy(el, async () => {
+    const S = store.S;
+    const val = (k) => document.querySelector(`.sw[data-k="${k}"]`).getAttribute("aria-checked") === "true";
+    const escalation = {
+      triggers: Object.fromEntries(Object.keys(S.meta.triggers).map((k) => [k, val(k)])),
+      askInfo: val("askInfo"),
+      fields: $$("#fields input:checked").map((i) => i.value),
+      cooldownMin: +$("#cd").value,
+    };
+    const r = await api("/api/settings", { escalation });
+    Object.assign(S, r);
+    R.escalation();
+    toast("Escalation settings saved");
+  });
