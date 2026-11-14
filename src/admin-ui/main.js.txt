@@ -5,6 +5,7 @@ import "./components.js";
 import "./pages/overview.js";
 import "./pages/content.js";
 import "./pages/guidance.js";
+import "./pages/style.js";
 import "./pages/tags.js";
 import "./pages/escalation.js";
 import "./pages/followup.js";
@@ -13,7 +14,7 @@ import "./pages/conversations.js";
 import "./pages/suggestions.js";
 import "./pages/settings.js";
 
-const TRAIN = new Set(["content", "guidance", "tags", "escalation", "followup"]);
+const TRAIN = new Set(["content", "guidance", "style", "tags", "escalation", "followup"]);
 const MODE_NOTE = { off: "The bot is off", offline: "Replies when the team is offline", always: "Replies to every message" };
 let current = "overview";
 let currentArg = null;

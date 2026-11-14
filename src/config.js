@@ -68,7 +68,7 @@ export const MAX_TAGS = 30;
 export const MODE_LABELS = { off: "Off", offline: "When team is offline", always: "Always on" };
 
 export const GUIDANCE_CATS = {
-  tone: { label: "Tone and personality", hint: "How the bot talks: friendly or formal, short or detailed, with or without emoji.", prompt: "Tone and personality" },
+  tone: { label: "Tone and personality", hint: "How the bot talks: friendly or formal, with or without emoji. Writing rules (length, format) and your team's real replies are on the Writing style page.", prompt: "Tone and personality" },
   clarify: { label: "Clarifying questions", hint: "When the bot should ask the customer something before answering.", prompt: "Asking clarifying questions" },
   content: { label: "Content and sources", hint: "What the bot should prioritise, mention or avoid.", prompt: "Content and sources" },
   handoff: { label: "Handing off to the team", hint: "What the bot tells the customer when it passes the conversation to the team.", prompt: "Handing off to the team" },
@@ -91,6 +91,8 @@ export const INFO_FIELDS = {
   theme: { label: "Theme name", prompt: "theme name" },
   tried: { label: "Steps already tried", prompt: "steps already tried" },
   screenshot: { label: "Screenshot or screen recording", prompt: "a screenshot or screen recording" },
+  // Mã 4 số để team gửi collaborator request vào store (khách vẫn phải chấp nhận). Không phải mật khẩu.
+  collabCode: { label: "Collaborator request code (4 digits, for store access)", prompt: "the store's 4-digit collaborator request code (Shopify admin > Settings > Users > Security), so the team can send a collaborator request" },
 };
 
 export const ESCALATION_DEFAULT = {

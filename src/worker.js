@@ -4,7 +4,7 @@
  * Chạy trên Cloudflare Workers, dùng OpenAI. Kiến thức: help center + trang website + snippet do team viết.
  *
  * Trang quản trị: /admin (đăng nhập bằng ADMIN_KEY)
- *   Huấn luyện: kiến thức, hướng dẫn, chuyển người, hỏi ý kiến & nhắc khách
+ *   Huấn luyện: kiến thức, hướng dẫn, văn phong, chuyển người, hỏi ý kiến & nhắc khách
  *   Phân tích: hiệu suất, hội thoại, gợi ý cải thiện
  *   Cài đặt: sản phẩm, help center, chế độ, giờ làm việc, email, khoá OpenAI + model, sao lưu, nhật ký thay đổi
  *

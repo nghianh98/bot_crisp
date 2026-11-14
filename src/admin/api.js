@@ -8,6 +8,7 @@ import { AI_FALLBACK_REPLY, AI_KEY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_L
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
 import { cleanTag, normTags, tagSlug } from "../tags.js";
+import { DEFAULT_RULES, MAX_EXAMPLES, MAX_RULES_CHARS, MAX_STYLE_CHARS, STYLE_KEY, cleanExample, cleanRules, getStyle, normStyle } from "../style.js";
 import { localNow } from "../time.js";
 import { cleanGuidance, cleanSnippet, legacyTraining, parseFaq } from "../training.js";
 import { UserError, bad, clip, getJSON, json, putJSON } from "../util.js";
@@ -29,6 +30,7 @@ export async function api(env, request, url) {
       case "GET /api/state": return json(await apiState(env, url, who));
       case "POST /api/settings": return json(await apiSettings(env, body, who));
       case "POST /api/guidance": return json(await apiGuidance(env, body, who));
+      case "POST /api/style": return json(await apiStyle(env, body, who));
       case "POST /api/snippets": return json(await apiSnippets(env, body, who));
       case "POST /api/kb": return json(await apiKb(env, body, who));
       case "POST /api/tags": return json(await apiTags(env, body, who));
@@ -97,13 +99,14 @@ export async function apiState(env, url, who) {
   let meta = (await getJSON(env, "kb:meta")) || {};
   if (meta.pages && !meta.articles) meta = await rebuildKnowledge(env, { kbCfg });
   const month = localNow(env).month;
-  const [log, changelog, queue] = await Promise.all([readLog(env, month), getJSON(env, "cfg:changelog", []), getJSON(env, QUEUE, {})]);
+  const [log, changelog, queue, style] = await Promise.all([readLog(env, month), getJSON(env, "cfg:changelog", []), getJSON(env, QUEUE, {}), getStyle(env)]);
   return {
     who,
     month,
     ...settingsView(env),
     guidance: t.guidance,
     snippets: t.snippets,
+    style,
     kb: kbView(env, meta, kbCfg, st),
     health: [
       { label: "Crisp keys", ok: !!(env.CRISP_IDENTIFIER && env.CRISP_KEY), fix: "Add CRISP_IDENTIFIER and CRISP_KEY in Cloudflare" },
@@ -120,6 +123,9 @@ export async function apiState(env, url, who) {
     tags: env.__tags,
     meta: {
       guidanceCats: GUIDANCE_CATS,
+      defaultRules: DEFAULT_RULES,
+      maxRulesChars: MAX_RULES_CHARS,
+      maxExamples: MAX_EXAMPLES,
       triggers: Object.fromEntries(Object.entries(TRIGGERS).map(([k, v]) => [k, { label: v.label, hint: v.hint }])),
       infoFields: Object.fromEntries(Object.entries(INFO_FIELDS).map(([k, v]) => [k, v.label])),
       modes: MODE_LABELS,
@@ -270,6 +276,62 @@ export async function apiGuidance(env, body, who) {
   } else bad("Unknown action");
   await putJSON(env, "cfg:guidance", items);
   return { guidance: items };
+}
+
+// Văn phong: độ dài, câu tự giới thiệu, câu trả lời mẫu của team (xem style.js)
+export async function apiStyle(env, body, who) {
+  const style = await getStyle(env);
+  const exName = (e) => clip(e.situation || e.group || e.text, 50);
+  if (body.op === "settings") {
+    const changes = [];
+    if (Object.hasOwn(body, "rules")) {
+      // chuỗi = luật của team (trống = không có luật viết nào); null = quay về luật mặc định
+      const rules = cleanRules(body.rules);
+      if (typeof body.rules === "string" && body.rules.length > MAX_RULES_CHARS) bad(`Writing rules can be up to ${MAX_RULES_CHARS} characters`);
+      if (rules !== style.rules) changes.push(rules == null ? "restored the default writing rules" : rules ? "edited the writing rules" : "removed all writing rules");
+      style.rules = rules;
+    }
+    if (body.intro != null) {
+      const intro = clip(body.intro, 80);
+      if (intro !== style.intro) changes.push(intro ? `introduction "${intro}"` : "no introduction");
+      style.intro = intro;
+    }
+    if (changes.length) await logChange(env, who, `Writing style: ${changes.join(", ")}`);
+  } else if (body.op === "save") {
+    const prev = style.examples.find((e) => e.id === body.item?.id);
+    const item = cleanExample({ ...body.item, id: prev?.id }, who, prev);
+    if (!item.text) bad("Paste the reply your team wrote");
+    if (prev) style.examples = style.examples.map((e) => (e.id === prev.id ? item : e));
+    else {
+      if (style.examples.length >= MAX_EXAMPLES) bad(`Up to ${MAX_EXAMPLES} example replies. Delete some first.`);
+      style.examples.push(item);
+    }
+    await logChange(env, who, prev ? (prev.enabled !== item.enabled ? `${item.enabled ? "Turned on" : "Turned off"} example reply "${exName(item)}"` : `Edited example reply "${exName(item)}"`) : `Added example reply "${exName(item)}"`);
+  } else if (body.op === "delete") {
+    const ids = new Set([].concat(body.ids || [], body.id || []).filter((x) => typeof x === "string"));
+    const gone = style.examples.filter((e) => ids.has(e.id));
+    if (!gone.length) bad("Example reply not found. Reload the page.");
+    style.examples = style.examples.filter((e) => !ids.has(e.id));
+    await logChange(env, who, gone.length === 1 ? `Deleted example reply "${exName(gone[0])}"` : `Deleted ${gone.length} example replies`);
+  } else if (body.op === "import") {
+    const seen = new Set(style.examples.map((e) => e.text.replace(/\s+/g, " ").trim().toLowerCase()));
+    const add = [];
+    for (const x of Array.isArray(body.items) ? body.items : []) {
+      const item = cleanExample({ group: x?.group, situation: x?.situation, text: x?.text, enabled: true }, who);
+      const k = item.text.replace(/\s+/g, " ").trim().toLowerCase();
+      if (!item.text || seen.has(k)) continue;
+      seen.add(k);
+      add.push(item);
+    }
+    if (!add.length) bad("No new replies to import (empty, or already in the list)");
+    if (style.examples.length + add.length > MAX_EXAMPLES) bad(`Up to ${MAX_EXAMPLES} example replies: you have ${style.examples.length}, this file adds ${add.length}. Untick some rows or delete old ones first.`);
+    style.examples.push(...add);
+    await logChange(env, who, `Imported ${add.length} example replies`);
+  } else bad("Unknown action");
+  const size = style.examples.reduce((n, e) => n + e.text.length, 0);
+  if (size > MAX_STYLE_CHARS) bad("Example replies are too long in total. Shorten or delete some first.");
+  await putJSON(env, STYLE_KEY, style);
+  return { style };
 }
 
 export async function apiSnippets(env, body, who) {
@@ -491,8 +553,8 @@ export async function apiSuggest(env, body) {
 }
 
 export async function apiExport(env) {
-  const [settings, guidance, snippets, kb, tags] = await Promise.all(["cfg:settings", "cfg:guidance", "cfg:snippets", "cfg:kb", "cfg:tags"].map((k) => getJSON(env, k)));
-  const data = { app: "transtore-bot", version: 2, exportedAt: new Date().toISOString(), settings: settings || {}, guidance: guidance || [], snippets: snippets || [], tags: tags || null, kb: { excluded: kb?.excluded || [], web: kb?.web || [], autoSync: autoSyncOf(kb) } };
+  const [settings, guidance, snippets, kb, tags, style] = await Promise.all(["cfg:settings", "cfg:guidance", "cfg:snippets", "cfg:kb", "cfg:tags", STYLE_KEY].map((k) => getJSON(env, k)));
+  const data = { app: "transtore-bot", version: 3, exportedAt: new Date().toISOString(), settings: settings || {}, guidance: guidance || [], snippets: snippets || [], tags: tags || null, style: normStyle(style), kb: { excluded: kb?.excluded || [], web: kb?.web || [], autoSync: autoSyncOf(kb) } };
   return new Response(JSON.stringify(data, null, 2), {
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": `attachment; filename="bot-backup-${localNow(env).month}.json"` },
   });
@@ -518,6 +580,7 @@ export async function apiImport(env, body, who) {
   };
   const writes = [putJSON(env, "cfg:settings", settings), putJSON(env, "cfg:guidance", guidance), putJSON(env, "cfg:snippets", snippets), putJSON(env, "cfg:kb", kb)];
   if (d.tags && typeof d.tags === "object") writes.push(putJSON(env, "cfg:tags", normTags(d.tags, env.__orig)));
+  if (d.style && typeof d.style === "object") writes.push(putJSON(env, STYLE_KEY, normStyle(d.style))); // bản sao lưu cũ (trước khi có Writing style) thì giữ nguyên văn phong hiện tại
   await Promise.all(writes);
   await logChange(env, who, `Restored from backup: ${guidance.length} guidance, ${snippets.length} snippets`);
   await rebuildKnowledge(env, { kbCfg: kb });

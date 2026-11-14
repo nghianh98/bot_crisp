@@ -4,6 +4,7 @@ import { GUIDANCE_CATS, INFO_FIELDS, TRIGGERS, cfg, effortLevel } from "./config
 import { BRIEF_RULE, BRIEF_SCHEMA, briefOn } from "./handoff.js";
 import { tagKeys } from "./tags.js";
 import { teamAvailabilityNote } from "./time.js";
+import { examplesBlock, getStyle, pickExamples, rulesOf } from "./style.js";
 import { getTraining } from "./training.js";
 import { UserError } from "./util.js";
 
@@ -70,8 +71,14 @@ export function actionRules(env) {
   return lines.join("\n");
 }
 
-export async function buildInstructions(env) {
-  const [{ guidance, snippets }, kb] = await Promise.all([getTraining(env), env.KB ? env.KB.get("kb:text") : null]);
+// Khoá Shopify cho phép team xin quyền vào store: bot chỉ xin khi team bật "Collaborator request code" trong Escalation
+export const COLLAB_GUIDE = "https://help.shopify.com/en/manual/your-account/users/security/collaborator-accounts#collaborator-codes";
+export const asksCollabCode = (env) => env.__esc.askInfo && env.__esc.fields.includes("collabCode");
+
+export async function buildInstructions(env, style = null) {
+  const [{ guidance, snippets }, kb, st] = await Promise.all([getTraining(env), env.KB ? env.KB.get("kb:text") : null, style || getStyle(env)]);
+  style = st;
+  const rules = rulesOf(style).trim(); // luật viết của team (admin → Writing style), không viết cứng trong code
   const email = cfg(env, "SUPPORT_EMAIL");
   const fu = env.__fu;
 
@@ -81,47 +88,37 @@ export async function buildInstructions(env) {
   let s = `You are ${cfg(env, "BOT_NAME")}, the support assistant of ${product}.${about ? `\n\nAbout ${product} (from the ${product} team):\n${about}` : ""}${helpUrl ? `\n\nHelp center: ${helpUrl}.` : ""}
 
 Answering:
-- ${/^auto$/i.test(cfg(env, "BOT_LANGUAGE")) ? "Reply in the customer's language." : `Always reply in ${cfg(env, "BOT_LANGUAGE")}, whatever language the customer writes in.`} Warm, human, to the point, like a helpful support agent in a chat window.
+- ${/^auto$/i.test(cfg(env, "BOT_LANGUAGE")) ? "Reply in the customer's language." : `Always reply in ${cfg(env, "BOT_LANGUAGE")}, whatever language the customer writes in.`}
 - Use ONLY the team snippets and the help center articles below. Snippets are written by the ${product} team: if a snippet and an article disagree, the snippet wins.
 - In an article, the text between "[Image: …]" and "[/Image]" was read from a screenshot in that article (for example a list of apps or a settings page): use it like the rest of the article.
 - Never invent features, prices, plans, steps or links.
 - If two articles disagree, give the more cautious answer and say the team can confirm.
-- Answer only what was asked. Do not add extra facts, limits or tips the customer did not ask about.
 
 Team snippets (they come before every other rule):
 - A snippet is a ready-made answer the ${product} team wrote for a question customers ask.
 - If the customer's latest message asks the same thing as a snippet's Q (same intent, even in other words, with typos or in another language: "t muốn gỡ app" = "I want to uninstall the app"), the reply IS that snippet's A, sent as written: keep its wording, tone, length, steps and line breaks. Only translate it if you reply in another language, and drop a sentence only if it plainly no longer fits (for example, it asks something the customer already answered).
-- For that reply, the formatting rules, the word limit, the tone guidance and the length rule for upset customers below do NOT apply. Whatever action you choose, the reply text stays the snippet's A. Put the snippet id in "sources".
+- For that reply, the team's writing rules, the tone guidance and the length rule for upset customers below do NOT apply. Whatever action you choose, the reply text stays the snippet's A. Put the snippet id in "sources".
 - If several snippets fit, use the one closest to the customer's message.
 
-Formatting (the chat widget shows plain text with line breaks; markdown is NOT rendered):
-- First line: the direct answer in one short sentence.
-- Steps: a numbered list, one step per line ("1. ...", "2. ..."), max 5 steps, each step one short line. Write menu paths as: Language > Add target language.
-- When asking the customer for several details, list each one on its own numbered line too.
-- Leave one empty line between the first line, the steps and the link.
-- Link: when an article helps, put its url (the url attribute) alone on the LAST line, prefixed with "Full guide: ". Never put a url inside a sentence. At most one link.
-- No markdown symbols (no **, no #, no tables, no bullet "-" or "*"). No closing questions like "Anything else?" unless the conversation needs one.
-- Keep the whole reply under about 80 words, unless the steps really need more.
+${rules ? `Writing rules from the ${product} team (how every reply looks):
+${rules}
 
-Example of a good reply (the format only; the product and steps here are made up):
-You can turn on email alerts from the Notifications page.
+` : ""}${style.intro ? `In your first reply of a conversation, introduce yourself as: ${style.intro}. Don't repeat it in later replies.
 
-1. Open the app and go to Settings > Notifications.
-2. Turn on Email alerts.
-3. Enter the address that should receive them.
-4. Click Save.
-
-Full guide: https://help.example.com/docs/email-alerts
+` : ""}The chat widget shows plain text with line breaks and does NOT render markdown: never use markdown symbols (no **, no #, no tables, no bullet "-" or "*").
 
 Other rules:
 - Refer to menus, pages and buttons exactly as written in the articles.
-- Never ask for passwords, logins, API keys or card details. If the team needs access to the customer's account, say a teammate will follow up on how to give access.`;
+- If the customer asks whether they are talking to a bot or a person, say honestly that you are ${product}'s AI assistant.
+- Never ask for passwords, staff logins, API keys or card details.${asksCollabCode(env)
+    ? ` When the team needs access to the store, ask for the store's collaborator request code: a 4-digit code (not a password) from Shopify admin > Settings > Users > Security. The team uses it to send a collaborator request that the merchant approves. You may put Shopify's guide on its own line: ${COLLAB_GUIDE}`
+    : " If the team needs access to the customer's account, say a teammate will follow up on how to give access."}`;
 
   if (fu.feedback) s += `\n- If the customer's last message is "${fu.noLabel}" (they tapped a button saying your previous answer did not help): apologise in a few words and ask one short question about what is still not working, or follow the hand-off rules if the issue needs a human.`;
 
   const active = (guidance || []).filter((g) => g.enabled && g.text);
   if (active.length) {
-    s += `\n\nGuidance from the ${product} support team (always follow it, unless it conflicts with the snippet, formatting or safety rules above; a matching snippet is sent as written):`;
+    s += `\n\nGuidance from the ${product} support team (always follow it, unless it conflicts with the snippet or safety rules above; a matching snippet is sent as written):`;
     for (const [cat, c] of Object.entries(GUIDANCE_CATS)) {
       const items = active.filter((g) => g.cat === cat);
       if (items.length) s += `\n${c.prompt}:\n${items.map((g) => `- ${g.text.replace(/\n+/g, "\n  ")}`).join("\n")}`;
@@ -237,9 +234,12 @@ Never ask the customer for anything in customer_info (for example their store UR
 }
 
 export async function generateReply(env, history, { handedOff = false, customer = null, earlierCase = false } = {}) {
-  const base = await buildInstructions(env);
+  const style = await getStyle(env);
+  const base = await buildInstructions(env, style);
+  // Câu mẫu của team chọn theo tin của khách: đặt sau phần cố định để giữ prompt cache
+  const examples = examplesBlock(cfg(env, "PRODUCT_NAME"), pickExamples(style.examples, history));
   const req = {
-    instructions: [base, customerBlock(customer), handedOff ? HANDED_OFF_NOTE : earlierCase && EARLIER_CASE_NOTE].filter(Boolean).join("\n\n"),
+    instructions: [base, examples, customerBlock(customer), handedOff ? HANDED_OFF_NOTE : earlierCase && EARLIER_CASE_NOTE].filter(Boolean).join("\n\n"),
     input: history.map((h) => ({ role: h.role, content: h.content })),
     schemaName: "support_reply",
     schema: replySchema(tagKeys(env), { brief: briefOn(env) }),

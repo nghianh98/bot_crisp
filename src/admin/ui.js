@@ -14,9 +14,11 @@ import main from "../admin-ui/main.js.txt";
 import core from "../admin-ui/core.js.txt";
 import components from "../admin-ui/components.js.txt";
 import preview from "../admin-ui/preview.js.txt";
+import sheet from "../admin-ui/sheet.js.txt";
 import overview from "../admin-ui/pages/overview.js.txt";
 import content from "../admin-ui/pages/content.js.txt";
 import guidance from "../admin-ui/pages/guidance.js.txt";
+import style from "../admin-ui/pages/style.js.txt";
 import tags from "../admin-ui/pages/tags.js.txt";
 import escalation from "../admin-ui/pages/escalation.js.txt";
 import followup from "../admin-ui/pages/followup.js.txt";
@@ -33,9 +35,11 @@ const FILES = {
   "core.js": core,
   "components.js": components,
   "preview.js": preview,
+  "sheet.js": sheet,
   "pages/overview.js": overview,
   "pages/content.js": content,
   "pages/guidance.js": guidance,
+  "pages/style.js": style,
   "pages/tags.js": tags,
   "pages/escalation.js": escalation,
   "pages/followup.js": followup,

@@ -33,8 +33,8 @@ const TEMPLATES = {
 const FIXED = [
   "Answers only from snippets, the help center and website pages; never invents features, prices or links.",
   "Replies in the language chosen in Settings.",
-  "Format: the first line answers directly, steps are numbered, the guide link goes on the last line, no markdown.",
-  "Never asks for passwords, staff logins, API keys or card numbers.",
+  "Plain text only: the chat doesn't show markdown. Length, format and voice follow your rules on the Writing style page.",
+  "Never asks for passwords, staff logins, API keys or card numbers (the collaborator request code is not a password: turn it on in Escalation).",
   "Angry customers: never goes silent or argues; apologises once and says when the team will reply.",
 ];
 

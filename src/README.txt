@@ -16,6 +16,7 @@ handoff.js          Ghi chú bàn giao: private note cho team khi bot chuyển k
 followup.js         Nhắc khách khi im lặng, kết thúc ca, tự Resolve
 knowledge.js        Sync help center và trang website (nút Sync now, tự động theo lịch)
 training.js         Snippet và hướng dẫn do team viết
+style.js            Văn phong: độ dài câu trả lời, câu tự giới thiệu, câu trả lời mẫu của team (trang Writing style)
 tags.js             Tag vấn đề, tiền tố, segment trạng thái
 stats.js            Thống kê tháng, nhật ký trả lời, nhật ký thay đổi
 config.js           Giá trị mặc định và cài đặt
@@ -36,7 +37,8 @@ admin-ui/           Giao diện trang quản trị (chạy trên trình duyệt)
   core.js.txt       Hàm dùng chung: gọi API, ngày giờ, hộp thoại, thông báo
   components.js.txt Thành phần dùng lại: form snippet, biểu đồ
   preview.js.txt    Khung Test the bot
-  pages/            Mỗi trang 1 file: overview, content (Knowledge), guidance, tags,
+  sheet.js.txt      Đọc file Excel (.xlsx) / CSV ngay trên trình duyệt (nhập câu trả lời mẫu)
+  pages/            Mỗi trang 1 file: overview, content (Knowledge), guidance, style (Writing style), tags,
                     escalation, followup, performance, conversations, suggestions, settings
 
 VÌ SAO CÓ FILE ĐUÔI .txt

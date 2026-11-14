@@ -80,7 +80,7 @@ ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<o
     .map((h) => `<div class="row"><span class="st ${h.ok ? "ok" : "bad"}" aria-hidden="true">${h.ok ? "✓" : "!"}</span><div class="grow"><p class="t">${esc(h.label)}</p><p class="sub">${esc(h.ok ? h.detail || "Set" : h.fix)}</p></div></div>`)
     .join("")}</div></div>
 </div></section>
-<section class="sec"><h2>Backup</h2><div class="form"><div class="fr"><div class="lb">All bot settings<small>Snippets, guidance, tags, settings and the list of articles that are off</small></div>
+<section class="sec"><h2>Backup</h2><div class="form"><div class="fr"><div class="lb">All bot settings<small>Snippets, guidance, writing style, tags, settings and the list of articles that are off</small></div>
 <div class="toolbar" style="margin:0"><a class="btn" href="/api/export" download>Download backup</a><button type="button" class="btn" data-act="importPick">Restore from file</button><input type="file" id="impf" accept="application/json,.json" hidden></div></div></div></section>`);
 
   const showBH = () => {
@@ -214,7 +214,7 @@ async function importFile(file) {
     return;
   }
   const when = data.exportedAt ? fmtTime(Date.parse(data.exportedAt)) : "an unknown date";
-  if (!(await confirmBox("Restore settings?", `All current snippets, guidance, tags and settings will be replaced with the backup from ${when}. Download a backup of the current setup first.`, "Restore", true))) return;
+  if (!(await confirmBox("Restore settings?", `All current snippets, guidance, writing style, tags and settings will be replaced with the backup from ${when}. Download a backup of the current setup first.`, "Restore", true))) return;
   try {
     await api("/api/import", { data });
     toast("Restored. Reloading…");
