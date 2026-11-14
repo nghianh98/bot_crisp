@@ -54,6 +54,7 @@ export function cleanSnippet(x = {}, who = "", prev = null) {
     q: clip(x.q, 300),
     a: clip(x.a, 2000, true),
     enabled: x.enabled !== false,
+    exact: x.exact === true, // luôn gửi nguyên văn, kể cả khi bot đang dùng snippet làm kiến thức
     src: ["manual", "gap", "import", "legacy"].includes(x.src) ? x.src : "manual",
     at: prev?.at || (Number.isFinite(x.at) ? x.at : now),
     upd: now,

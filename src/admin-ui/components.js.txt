@@ -14,7 +14,12 @@ export function openSnippet(id, pre = {}) {
 <label class="fl" for="sa">Answer</label>
 <textarea class="in" id="sa" rows="8" maxlength="2000" placeholder="Write the facts the answer needs. The bot rewords it in its usual reply format.">${esc(x.a)}</textarea>
 <p class="meta"><span id="sc">${x.a.length}</span>/2000 characters. English or Vietnamese both work.</p>
-<label class="chk"><input type="checkbox" id="se" ${x.enabled ? "checked" : ""}> The bot uses this snippet</label>`,
+<label class="chk"><input type="checkbox" id="se" ${x.enabled ? "checked" : ""}> The bot uses this snippet</label>
+${
+  S.settings.snippetMode === "exact"
+    ? `<p class="meta">All snippets are sent exactly as written (see "How the bot uses snippets" above the list).</p>`
+    : `<label class="chk"><input type="checkbox" id="sx" ${x.exact ? "checked" : ""}> Always send this answer exactly as written <span class="muted">(for approved wording, like a policy)</span></label>`
+}`,
     `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="snipSave" data-id="${esc(id || "")}">Save snippet</button>`,
     {
       onOpen(d) {
@@ -28,7 +33,10 @@ export function openSnippet(id, pre = {}) {
 A.snipSave = (el) =>
   busy(el, async () => {
     const S = store.S;
-    const item = { id: el.dataset.id || undefined, q: $("#sq").value, a: $("#sa").value, enabled: $("#se").checked, src: UI.fixLog ? "gap" : undefined };
+    const prev = S.snippets.find((x) => x.id === el.dataset.id);
+    // No tick box on screen (all snippets are sent as written, or the quick form): keep what the snippet had
+    const exact = $("#sx") ? $("#sx").checked : !!prev?.exact;
+    const item = { id: el.dataset.id || undefined, q: $("#sq").value, a: $("#sa").value, enabled: $("#se").checked, exact, src: UI.fixLog ? "gap" : undefined };
     const r = await api("/api/snippets", { op: "save", item, fixLog: UI.fixLog || undefined });
     S.snippets = r.snippets;
     const fixed = UI.fixLog;

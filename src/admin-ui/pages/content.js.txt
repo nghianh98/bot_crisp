@@ -1,5 +1,5 @@
 // Knowledge: snippets written by the team, help center articles, website pages. The bot only answers from sources that are on.
-import { $, A, R, UI, ago, api, busy, closeModal, confirmBox, esc, fail, header, host, matches, modal, n, plural, refresh, setMain, store, sw, toast } from "../core.js";
+import { $, $$, A, R, UI, ago, api, busy, closeModal, confirmBox, esc, fail, header, host, matches, modal, n, plural, refresh, setMain, store, sw, toast } from "../core.js";
 
 const SECTIONS = { docs: "Guides", faq: "FAQ", troubleshooting: "Troubleshooting", comparisons: "Comparisons" };
 const SRC = { manual: "Written by hand", gap: "From Suggestions", import: "Bulk import", legacy: "From the old FAQ" };
@@ -89,7 +89,7 @@ function renderList() {
           .map(
             (x) => `<div class="row">${sw(x.enabled, "snipToggle", `data-id="${esc(x.id)}"`, "The bot uses this snippet")}
 <div class="grow"><button type="button" class="lk t" data-act="snipEdit" data-id="${esc(x.id)}">${esc(x.q)}</button><p class="sub clamp">${esc(x.a)}</p>
-<p class="meta">${esc(SRC[x.src] || "Written by hand")}, edited ${ago(x.upd)}${x.by ? ` by ${esc(x.by)}` : ""}</p></div>
+<p class="meta">${S.settings.snippetMode !== "exact" && x.exact ? `<span class="chip">Sent as written</span> ` : ""}${esc(SRC[x.src] || "Written by hand")}, edited ${ago(x.upd)}${x.by ? ` by ${esc(x.by)}` : ""}</p></div>
 <div class="acts"><button type="button" class="btn ghost sm" data-act="tryQ" data-q="${esc(x.q)}">Test</button><button type="button" class="btn ghost sm danger" data-act="snipDel" data-id="${esc(x.id)}">Delete</button></div></div>`
           )
           .join("")
@@ -113,7 +113,29 @@ function renderList() {
       }
     }
   }
-  $("#clist").innerHTML = `<div class="rows">${html}</div>`;
+  $("#clist").innerHTML = `${UI.tab === "snippets" ? snippetModeBox() : ""}<div class="rows">${html}</div>`;
+  $$('input[name="snipMode"]').forEach((i) => (i.onchange = () => setSnippetMode(i.value)));
+}
+
+// How the bot uses snippets: as knowledge (it writes its own reply) or sent word for word
+function snippetModeBox() {
+  const mode = store.S.settings.snippetMode;
+  const opt = (v, title, desc) => `<label class="radio"><input type="radio" name="snipMode" value="${v}" ${mode === v ? "checked" : ""}><div><b>${title}</b><span>${desc}</span></div></label>`;
+  return `<div class="snipmode"><p class="t">How the bot uses snippets</p><div class="radios">
+${opt("knowledge", "As knowledge", "The bot writes its own reply from the snippets and the help center, for the exact question asked, following your writing style. You can still mark single snippets to be sent as written.")}
+${opt("exact", "Exactly as written", "When a question matches a snippet, its answer is sent word for word, whatever your writing style says. A question that only loosely matches gets the same ready-made answer.")}
+</div><p class="note">Compare both without changing the live bot: pick one under "Snippets" in Test the bot.</p></div>`;
+}
+
+async function setSnippetMode(v) {
+  const S = store.S;
+  try {
+    Object.assign(S, await api("/api/settings", { settings: { snippetMode: v } }));
+    toast(v === "exact" ? "Snippets are sent exactly as written" : "Snippets are used as knowledge. Try a few questions in the Test panel.");
+  } catch (e) {
+    fail(e);
+  }
+  renderList();
 }
 
 async function setAutoSync(sel) {

@@ -500,6 +500,8 @@ export async function apiTest(env, body) {
     .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
   while (msgs.length && msgs[0].role !== "user") msgs = msgs.slice(1);
   if (!msgs.length || msgs.at(-1).role !== "user") bad("Type a customer question");
+  // Thử một cách dùng snippet khác với cách đang lưu, chỉ cho lần hỏi thử này (bot thật không đổi)
+  if (body.snippetMode === "knowledge" || body.snippetMode === "exact") env = { ...env, SNIPPET_MODE: body.snippetMode };
   const t0 = Date.now();
   let r;
   try {
@@ -606,7 +608,7 @@ export async function apiExport(env) {
    guidance, style, snippets, tags = đúng tên trang */
 export const RESTORE_SECTIONS = {
   product: { label: "Product and knowledge sources", fields: ["product", "productDesc", "helpUrl", "helpSections", "helpPages", "helpSelector", "supportEmail"] },
-  bot: { label: "Bot settings", fields: ["botName", "language", "mode", "businessHours", "utcOffset", "model", "effort"] },
+  bot: { label: "Bot settings", fields: ["botName", "language", "snippetMode", "mode", "businessHours", "utcOffset", "model", "effort"] },
   escalation: { label: "Escalation and follow-up", fields: [] },
   guidance: { label: "Guidance", fields: [] },
   style: { label: "Writing style", fields: [] },

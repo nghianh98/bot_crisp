@@ -39,6 +39,10 @@ export const DEFAULTS = {
   CLASSIFY_ON_RESOLVE: "true",
   DEBOUNCE_MS: "2500",
   HISTORY_LIMIT: "20",
+  // Cách bot dùng snippet: "knowledge" = là kiến thức, AI tự soạn câu trả lời cho đúng câu khách hỏi;
+  // "exact" = câu hỏi khớp snippet thì gửi nguyên văn câu trả lời của snippet. Chọn trên /admin → Knowledge.
+  // (Từng snippet có thể đánh dấu "luôn gửi nguyên văn" dù đang ở chế độ knowledge.)
+  SNIPPET_MODE: "knowledge",
   PAGES_PER_RUN: "6",
   // Ảnh trong help center: mỗi bước sync cho AI đọc tối đa ngần này ảnh MỚI (ảnh đã đọc thì lấy lại bản đã lưu).
   // Ảnh chưa kịp đọc thì để lần sync sau. Mỗi ảnh tối đa IMAGE_READ_MS mili giây.
@@ -180,6 +184,7 @@ export const SETTINGS_FIELDS = {
   helpPages: { env: "HELP_CENTER_PAGES", label: "Help center pages", max: 40000, multiline: true, check: (v) => v.split("\n").filter((l) => l.trim()).every((l) => HTTPS_URL.test(l.trim())), error: "Help center pages: one link per line, each starting with https://" },
   helpSelector: { env: "HELP_CENTER_SELECTOR", label: "Help center content area", max: 120, check: (v) => /^[\w\-.#\[\]="' >:()]*$/.test(v), error: "Content area: a CSS selector like .article-body or #main-content" },
   language: { env: "BOT_LANGUAGE", label: "Reply language", max: 30, required: true },
+  snippetMode: { env: "SNIPPET_MODE", label: "How snippets are used", values: ["knowledge", "exact"] },
   businessHours: { env: "BUSINESS_HOURS", label: "Working hours", max: 80, check: (v) => !v || !!parseBusinessHours(v), error: "Working hours format is invalid (example: Mon-Sun 08:00-24:00)" },
   utcOffset: { env: "UTC_OFFSET_HOURS", label: "Time zone", values: UTC_OFFSETS },
   supportEmail: { env: "SUPPORT_EMAIL", label: "Support email", max: 120, check: (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), error: "That email address isn't valid" },

@@ -3,12 +3,12 @@
 
    Trước bản 2, các nội dung dưới đây nằm cứng trong code (viết cho app đầu tiên dùng bot này).
    Giờ chúng là cài đặt team tự sửa trên /admin, và code không còn nội dung riêng của app nào.
-   - Bot ĐÃ CHẠY từ trước (cfg:settings chưa có v: 2): giữ nguyên cách trả lời. Các chữ cũ trong file này
+   - Bot ĐÃ CHẠY từ trước (cfg:settings chưa có v mới nhất): giữ nguyên cách trả lời. Các chữ cũ trong file này
      trở thành giá trị của bot đó, hiện trên /admin và sửa được. Lần lưu cài đặt kế tiếp ghi chúng vào KV (v: 2).
    - Bot CÀI MỚI không đi qua file này: bắt đầu bằng mặc định trung tính trong config.js.
    Khi mọi bot cũ đã lưu cài đặt ở bản 2 và không còn cần khôi phục file sao lưu cũ, có thể xoá file này. */
 
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 // "Thông tin cần hỏi khách" từng là 6 ô cố định, lưu bằng tên ô
 const FIELDS_V1 = {
@@ -41,8 +41,14 @@ const V1 = {
 
 /** Cài đặt đã lưu (hoặc phần settings của file sao lưu) → dạng bản 2. null (bot mới) và dữ liệu đã ở bản 2 thì trả lại nguyên. */
 export function upgradeSettings(saved, env = {}) {
-  if (!saved || typeof saved !== "object" || Number(saved.v) >= SETTINGS_VERSION) return saved;
+  if (!saved || typeof saved !== "object") return saved;
+  const from = Number(saved.v) || 1;
+  if (from >= SETTINGS_VERSION) return saved;
   const s = { ...saved, v: SETTINGS_VERSION };
+  // Trước bản 3, snippet khớp câu hỏi luôn được gửi nguyên văn. Bot đã chạy giữ cách đó cho tới khi team đổi
+  // trên /admin → Knowledge; bot mới mặc định dùng snippet làm kiến thức (config.js).
+  s.snippetMode ??= "exact";
+  if (from >= 2) return s;
   const e = saved.escalation && typeof saved.escalation === "object" ? { ...saved.escalation } : {};
   if (!Array.isArray(e.fields) || e.fields.every((x) => typeof x === "string")) {
     const on = Array.isArray(e.fields) ? e.fields : FIELDS_ON_V1;

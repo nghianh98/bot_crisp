@@ -70,10 +70,39 @@ ${Object.entries(PRIORITY_LEVELS).map(([k, name]) => `  ${name}: ${e.priority[k]
   return lines.join("\n");
 }
 
+const SAME_INTENT = `same intent, even in other words, with typos or in another language: "cómo cancelo mi plan" = "How do I cancel my plan?"`;
+
+/* Luật dùng snippet trong prompt.
+   allExact  = cả bot gửi nguyên văn (cách cũ): câu hỏi khớp snippet → câu trả lời LÀ câu của snippet.
+   ngược lại = snippet là kiến thức: AI tự soạn câu trả lời cho đúng câu khách hỏi, theo luật viết của team;
+   someExact = trong đó có vài snippet team đánh dấu "luôn gửi nguyên văn" (gắn exact="true" trong <snippets>). */
+function snippetRules(product, allExact, someExact) {
+  if (allExact)
+    return `Team snippets (they come before every other rule):
+- A snippet is a ready-made answer the ${product} team wrote for a question customers ask.
+- If the customer's latest message asks the same thing as a snippet's Q (${SAME_INTENT}), the reply IS that snippet's A, sent as written: keep its wording, tone, length, steps and line breaks. Only translate it if you reply in another language, and drop a sentence only if it plainly no longer fits (for example, it asks something the customer already answered).
+- For that reply, the team's writing rules, the tone guidance and the length rule for upset customers below do NOT apply. Whatever action you choose, the reply text stays the snippet's A. Put the snippet id in "sources".
+- If several snippets fit, use the one closest to the customer's message.`;
+  return `Team snippets:
+- A snippet is an answer the ${product} team wrote for a question customers ask. Snippets are your most trusted knowledge.
+- Use what a snippet says to answer the question the customer actually asked: answer their specific case (for example the one item they named, not the general topic), and add what the help center articles say when that makes the answer complete. Never paste a snippet that only partly fits the question.
+- Write the reply yourself, following the team's writing rules and guidance below.
+- Put the id of every snippet you used in "sources".${
+    someExact
+      ? `
+- Snippets marked exact="true" are fixed replies. If the customer's latest message asks the same thing as such a snippet's Q (${SAME_INTENT}), the reply IS that snippet's A, sent as written: keep its wording, tone, length, steps and line breaks. Only translate it if you reply in another language, and drop a sentence only if it plainly no longer fits. For that reply, the team's writing rules, the tone guidance and the length rule for upset customers below do NOT apply.`
+      : ""
+  }`;
+}
+
 export async function buildInstructions(env, style = null) {
   const [{ guidance, snippets }, kb, st] = await Promise.all([getTraining(env), env.KB ? env.KB.get("kb:text") : null, style || getStyle(env)]);
   style = st;
   const rules = rulesOf(style).trim(); // luật viết của team (admin → Writing style), không viết cứng trong code
+  // Snippet: cả bot gửi nguyên văn ("exact"), hoặc dùng làm kiến thức, trừ các snippet team đánh dấu "luôn gửi nguyên văn"
+  const sn = (snippets || []).filter((x) => x.enabled && x.a);
+  const allExact = cfg(env, "SNIPPET_MODE") === "exact";
+  const someExact = !allExact && sn.some((x) => x.exact);
   const email = cfg(env, "SUPPORT_EMAIL");
   const fu = env.__fu;
 
@@ -89,11 +118,7 @@ Answering:
 - Never invent features, prices, plans, steps or links.
 - If two articles disagree, give the more cautious answer and say the team can confirm.
 
-Team snippets (they come before every other rule):
-- A snippet is a ready-made answer the ${product} team wrote for a question customers ask.
-- If the customer's latest message asks the same thing as a snippet's Q (same intent, even in other words, with typos or in another language: "cómo cancelo mi plan" = "How do I cancel my plan?"), the reply IS that snippet's A, sent as written: keep its wording, tone, length, steps and line breaks. Only translate it if you reply in another language, and drop a sentence only if it plainly no longer fits (for example, it asks something the customer already answered).
-- For that reply, the team's writing rules, the tone guidance and the length rule for upset customers below do NOT apply. Whatever action you choose, the reply text stays the snippet's A. Put the snippet id in "sources".
-- If several snippets fit, use the one closest to the customer's message.
+${snippetRules(product, allExact, someExact)}
 
 ${rules ? `Writing rules from the ${product} team (how every reply looks):
 ${rules}
@@ -111,7 +136,7 @@ Other rules:
 
   const active = (guidance || []).filter((g) => g.enabled && g.text);
   if (active.length) {
-    s += `\n\nGuidance from the ${product} support team (always follow it, unless it conflicts with the snippet or safety rules above; a matching snippet is sent as written):`;
+    s += `\n\nGuidance from the ${product} support team (always follow it, unless it conflicts with the ${allExact ? "snippet or " : ""}safety rules above${allExact ? "; a matching snippet is sent as written" : someExact ? "; a matching fixed-reply snippet is sent as written" : ""}):`;
     for (const [cat, c] of Object.entries(GUIDANCE_CATS)) {
       const items = active.filter((g) => g.cat === cat);
       if (items.length) s += `\n${c.prompt}:\n${items.map((g) => `- ${g.text.replace(/\n+/g, "\n  ")}`).join("\n")}`;
@@ -123,8 +148,7 @@ Other rules:
   const upset = upsetRules(env.__esc).trim();
   if (upset) s += `\n\nUpset or angry customers:\n${upset}`;
 
-  const sn = (snippets || []).filter((x) => x.enabled && x.a);
-  if (sn.length) s += `\n\n<snippets>\n${sn.map((x) => `<snippet id="${x.id}">\nQ: ${x.q}\nA: ${x.a}\n</snippet>`).join("\n")}\n</snippets>`;
+  if (sn.length) s += `\n\n<snippets>\n${sn.map((x) => `<snippet id="${x.id}"${someExact && x.exact ? ' exact="true"' : ""}>\nQ: ${x.q}\nA: ${x.a}\n</snippet>`).join("\n")}\n</snippets>`;
   // Cloudflare che email trên help center thành "[email protected]" → thay bằng SUPPORT_EMAIL
   const kbText = kb?.trim() ? kb.replace(/\[email[\s ]*protected\]/gi, email || `the ${product} support email`) : "";
   s += kbText ? `\n\n<help_center>\n${kbText}\n</help_center>` : "\n\nNo help center articles are loaded yet.";

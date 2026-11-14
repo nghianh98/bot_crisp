@@ -76,7 +76,7 @@ export async function pvAsk(text) {
   pvRender();
   try {
     const history = P.msgs.filter((m) => m.role === "user" || m.role === "assistant").map((m) => ({ role: m.role, content: m.content }));
-    const r = await api("/api/test", { messages: history, handedOff: $("#pvHand").checked, customer: pvCustomer() });
+    const r = await api("/api/test", { messages: history, handedOff: $("#pvHand").checked, customer: pvCustomer(), snippetMode: $("#pvSnip")?.value || undefined });
     P.msgs.push({ role: "assistant", content: r.reply, meta: r, q: text });
     if (r.action === "handoff") $("#pvHand").checked = true;
   } catch (e) {
