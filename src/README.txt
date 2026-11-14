@@ -1,10 +1,11 @@
 SUPPORT BOT: ĐỌC TRƯỚC KHI SỬA CODE
 
-!! Code gốc giờ nằm ở project local (bot_scrisp). Đừng sửa thẳng trên dashboard Cloudflare nữa:
+!! Code gốc nằm ở project local (bot_crisp). Đừng sửa thẳng trên dashboard Cloudflare:
 !! lần deploy sau từ local sẽ ghi đè mọi chỗ sửa trên dashboard. Sửa ở local rồi deploy lên.
 
-Đây là toàn bộ code của bot. Không có bước build: file nào ở đây cũng là file đang chạy thật.
-Sửa xong deploy là áp dụng ngay cho khách.
+Thư mục src/ này là code của Worker (phần bot và máy chủ của trang quản trị). Không có bước build:
+file nào ở đây cũng là file đang chạy thật. Sửa xong deploy là áp dụng ngay cho khách.
+Giao diện trang quản trị (React) nằm ngoài thư mục này, ở admin-ui/: xem mục GIAO DIỆN bên dưới.
 Phần lớn việc hằng ngày (chế độ bot, snippet, hướng dẫn, tag, giờ làm việc...) chỉnh trên trang /admin, không cần sửa code.
 
 CÂY THƯ MỤC
@@ -29,28 +30,30 @@ admin/              Phần máy chủ của trang quản trị
   api.js            API /api/* (trang /admin đọc và lưu dữ liệu qua đây)
   auth.js           Đăng nhập bằng ADMIN_KEY
   pages.js          Trang đăng nhập, trang trạng thái
-  ui.js             Gửi các file trong admin-ui/ cho trình duyệt
+  ui.js             Gửi giao diện đã build (thư mục build/) cho người đã đăng nhập
 
-admin-ui/           Giao diện trang quản trị (chạy trên trình duyệt)
-  index.html        Khung trang: menu bên trái, khung Test the bot
-  styles.css.txt    Toàn bộ CSS
-  main.js.txt       Điểm vào: tải dữ liệu, chuyển trang
-  core.js.txt       Hàm dùng chung: gọi API, ngày giờ, hộp thoại, thông báo
-  components.js.txt Thành phần dùng lại: form snippet, biểu đồ
-  preview.js.txt    Khung Test the bot
-  sheet.js.txt      Đọc file Excel (.xlsx) / CSV ngay trên trình duyệt (nhập câu trả lời mẫu)
-  pages/            Mỗi trang 1 file: overview, content (Knowledge), guidance, style (Writing style), tags,
-                    escalation, followup, performance, conversations, suggestions, settings
+GIAO DIỆN TRANG QUẢN TRỊ (thư mục admin-ui/ ở gốc project, viết bằng React, build bằng Vite)
 
-VÌ SAO CÓ FILE ĐUÔI .txt
+admin-ui/
+  index.html        Trang gốc, Vite gắn code vào đây
+  src/main.jsx      Điểm vào
+  src/App.jsx       Khung trang: tải dữ liệu, menu bên trái, chuyển trang theo #tên-trang, khung Test the bot
+  src/styles.css    Toàn bộ CSS
+  src/pages/        Mỗi trang 1 file: Overview, Content (Knowledge), Guidance, Style (Writing style), Tags,
+                    Escalation, Followup, Performance, Conversations, Suggestions, Settings (kèm Change log)
+  src/components/   Thành phần dùng lại: ui.jsx (nút, công tắc, hộp thoại, thông báo), common.jsx (nhãn, biểu đồ),
+                    Snippet.jsx (form snippet, Improve this answer), Preview.jsx (khung Test the bot)
+  src/lib/          api.js (gọi /api), store.js (dữ liệu dùng chung), format.js (số, ngày giờ),
+                    preview.js, toast.js, hooks.js, sheet.js (đọc Excel .xlsx / CSV trên trình duyệt)
 
-Cloudflare chỉ nhận 3 loại file: .js (code chạy trên máy chủ), .txt và .html (văn bản).
-File CSS và JS của giao diện chạy trên trình duyệt chứ không chạy trên máy chủ, nên phải thêm đuôi .txt.
-Nội dung bên trong vẫn là CSS và JavaScript bình thường. Đừng bỏ đuôi .txt, Cloudflare sẽ không lưu được.
-Muốn tô màu code khi xem: bấm chữ "Plain Text" ở góc phải dưới, chọn JavaScript hoặc CSS.
+`npm run build` gói admin-ui/ thành file tĩnh trong build/admin/ (thư mục build/ không lên git).
+wrangler tự chạy lệnh này trước mỗi lần `npm run dev`, `npm run check` và `npm run deploy`, rồi đưa build/ lên cùng Worker.
+Sửa giao diện cho nhanh: chạy `npm run dev` ở một cửa sổ, `npm run dev:ui` ở cửa sổ khác, mở http://localhost:5173/admin/
+(đăng nhập trước ở http://localhost:8787/admin). Trang tự cập nhật mỗi lần lưu file.
 
 LƯU Ý
 
-- Thêm 1 file giao diện mới: làm theo ghi chú đầu file admin/ui.js.
+- Thêm 1 trang mới: tạo admin-ui/src/pages/Ten.jsx, rồi thêm vào PAGES và NAV trong admin-ui/src/App.jsx.
+- Giao diện không sửa được trên dashboard Cloudflare (file trên đó là bản đã build). Sửa ở local rồi deploy.
 - Khoá bí mật (Crisp, OpenAI, ADMIN_KEY) không nằm trong code. Chúng ở Settings → Variables and Secrets.
 - Deploy nhầm: ra trang của worker trên Cloudflare, mở tab Deployments, bấm dấu ... ở bản trước đó để quay lại bản đó.

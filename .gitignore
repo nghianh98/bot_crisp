@@ -168,3 +168,6 @@ dist
 
 # macOS
 .DS_Store
+
+# Giao diện admin đã build (npm run build tạo lại từ admin-ui/)
+/build/

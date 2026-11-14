@@ -12,11 +12,11 @@
  *   CRISP_IDENTIFIER, CRISP_KEY, CRISP_HOOK_SECRET, ADMIN_KEY (OPENAI_API_KEY: tuỳ chọn, nhập khoá trên /admin cũng được)
  * Bindings: KV namespace tên KB.   Triggers → Cron: * * * * *
  *
- * Code chia nhiều file, không gộp: mỗi file ở đây là 1 file trên Cloudflare (Edit code → Explorer).
+ * Code Worker chia nhiều file, không gộp: mỗi file trong src/ là 1 file trên Cloudflare.
  *   worker.js      cổng vào (file này)
  *   bot.js, ai.js, followup.js, knowledge.js, ...   phần bot
  *   admin/         API và đăng nhập của trang quản trị
- *   admin-ui/      giao diện trang quản trị chạy trên trình duyệt (xem admin/ui.js)
+ * Giao diện trang quản trị (React) nằm ngoài src/, ở thư mục admin-ui/: xem admin/ui.js.
  */
 
 import { api } from "./admin/api.js";
@@ -40,16 +40,16 @@ export default {
     if (p === "/admin" || p === "/admin/") {
       if (url.searchParams.has("key")) return keyLogin(env, url);
       if (!(await isAdmin(env, request))) return loginPage(env, "/admin");
-      return adminPage();
+      return adminPage(env, url);
     }
-    if (p.startsWith("/admin/ui/")) {
+    if (p.startsWith("/admin/assets/")) {
       if (!(await isAdmin(env, request))) return new Response("Sign in at /admin first", { status: 401 });
-      return uiFile(p);
+      return uiFile(env, request);
     }
     if (p.startsWith("/api/")) return api(env, request, url);
     if (p === "/report") return Response.redirect(`${url.origin}/admin#performance`, 302);
     if (p === "/settings") return Response.redirect(`${url.origin}/admin#content`, 302);
-    if (p === "/" || p === "/status") return statusPage(await withConfig(env));
+    if (p === "/" || p === "/status") return statusPage(await withConfig(env), url);
     return new Response("Not found", { status: 404 });
   },
 

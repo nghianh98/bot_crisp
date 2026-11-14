@@ -1,8 +1,0 @@
-{
-  // Giao diện admin phải giữ đuôi .txt để Cloudflare nhận dạng văn bản.
-  // Hai dòng dưới giúp VS Code vẫn tô màu và gợi ý code như file .js / .css bình thường.
-  "files.associations": {
-    "*.js.txt": "javascript",
-    "*.css.txt": "css"
-  }
-}

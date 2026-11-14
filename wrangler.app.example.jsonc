@@ -14,6 +14,9 @@
   "rules": [
     { "type": "ESModule", "globs": ["**/*.js"] }
   ],
+  // Giao diện /admin: wrangler tự chạy `npm run build` (gói admin-ui/ vào build/) rồi đưa build/ lên cùng Worker.
+  "build": { "command": "npm run build", "watch_dir": ["src", "admin-ui"] },
+  "assets": { "directory": "./build", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none", "not_found_handling": "none" },
   "workers_dev": true,
   "preview_urls": false,
   "compatibility_date": "2026-11-11",

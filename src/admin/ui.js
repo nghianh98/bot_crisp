@@ -1,55 +1,11 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // Giao diện trang /admin.
 //
-// Các file trong admin-ui/ là code chạy trên TRÌNH DUYỆT (HTML, CSS, JS), không phải code của Worker.
-// Cloudflare chỉ nhận 3 loại file: .js (code chạy trên máy chủ), .txt và .html (văn bản).
-// Vì vậy file CSS và JS của giao diện có thêm đuôi .txt: Worker đọc chúng như văn bản
-// rồi gửi nguyên văn cho trình duyệt. Không có bước build hay gộp file nào.
-//
-// Thêm 1 file giao diện mới: tạo file trong admin-ui/ (ví dụ pages/abc.js.txt),
-// rồi thêm 1 dòng import và 1 dòng trong FILES bên dưới.
-import INDEX from "../admin-ui/index.html";
-import styles from "../admin-ui/styles.css.txt";
-import main from "../admin-ui/main.js.txt";
-import core from "../admin-ui/core.js.txt";
-import components from "../admin-ui/components.js.txt";
-import preview from "../admin-ui/preview.js.txt";
-import sheet from "../admin-ui/sheet.js.txt";
-import overview from "../admin-ui/pages/overview.js.txt";
-import content from "../admin-ui/pages/content.js.txt";
-import guidance from "../admin-ui/pages/guidance.js.txt";
-import style from "../admin-ui/pages/style.js.txt";
-import tags from "../admin-ui/pages/tags.js.txt";
-import escalation from "../admin-ui/pages/escalation.js.txt";
-import followup from "../admin-ui/pages/followup.js.txt";
-import performance from "../admin-ui/pages/performance.js.txt";
-import conversations from "../admin-ui/pages/conversations.js.txt";
-import suggestions from "../admin-ui/pages/suggestions.js.txt";
-import settings from "../admin-ui/pages/settings.js.txt";
+// Mã nguồn giao diện (React) nằm ở thư mục admin-ui/ ngoài src/. Lệnh `npm run build` (Vite) gói nó thành file tĩnh
+// trong build/admin/, và wrangler đưa thư mục build/ lên Cloudflare cùng lúc với Worker (mục "assets" trong wrangler.jsonc).
+// Worker đọc các file đó qua binding ASSETS. Mọi request vẫn đi qua Worker trước (run_worker_first),
+// nên chỉ người đã đăng nhập mới tải được giao diện.
 import { hash } from "../util.js";
-
-// Tên file trình duyệt gọi (không có đuôi .txt) → nội dung file
-const FILES = {
-  "styles.css": styles,
-  "main.js": main,
-  "core.js": core,
-  "components.js": components,
-  "preview.js": preview,
-  "sheet.js": sheet,
-  "pages/overview.js": overview,
-  "pages/content.js": content,
-  "pages/guidance.js": guidance,
-  "pages/style.js": style,
-  "pages/tags.js": tags,
-  "pages/escalation.js": escalation,
-  "pages/followup.js": followup,
-  "pages/performance.js": performance,
-  "pages/conversations.js": conversations,
-  "pages/suggestions.js": suggestions,
-  "pages/settings.js": settings,
-};
-
-const TYPES = { css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8" };
 
 const PAGE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
@@ -60,28 +16,30 @@ const PAGE_HEADERS = {
     "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
-// Mã phiên bản giao diện = hash nội dung mọi file giao diện. Mã nằm trong đường dẫn (/admin/ui/<mã>/...):
-// trình duyệt giữ file trong bộ nhớ đệm, và tự tải bản mới ngay sau lần deploy có sửa giao diện.
-let version;
-export const uiVersion = () => (version ??= hash(INDEX + Object.entries(FILES).map(([name, text]) => `\n${name}\n${text}`).join("")));
+const NOT_BUILT = "The admin page isn't built yet. Run `npm run build`, then deploy again.";
 
-/** Trang /admin: index.html, với {{ui}} thay bằng đường dẫn tới các file giao diện */
-export async function adminPage() {
-  const base = `/admin/ui/${await uiVersion()}`;
-  return new Response(INDEX.replaceAll("{{ui}}", base), { headers: PAGE_HEADERS });
+const indexHtml = (env, origin) => (env.ASSETS ? env.ASSETS.fetch(new Request(`${origin}/admin/index.html`)) : null);
+
+/** Trang /admin: file index.html do Vite tạo ra, kèm các header bảo mật */
+export async function adminPage(env, url) {
+  const res = await indexHtml(env, url.origin);
+  if (!res?.ok) return new Response(NOT_BUILT, { status: 500 });
+  return new Response(res.body, { headers: PAGE_HEADERS });
 }
 
-/** File giao diện: /admin/ui/<mã phiên bản>/<tên file> */
-export async function uiFile(pathname) {
-  const [v, ...rest] = pathname.slice("/admin/ui/".length).split("/");
-  const name = rest.join("/");
-  if (!Object.hasOwn(FILES, name)) return new Response("Not found", { status: 404 });
-  const current = v === (await uiVersion());
-  return new Response(FILES[name], {
-    headers: {
-      "content-type": TYPES[name.slice(name.lastIndexOf(".") + 1)],
-      "cache-control": current ? "private, max-age=31536000, immutable" : "no-store",
-      "x-content-type-options": "nosniff",
-    },
-  });
+/** File giao diện: /admin/assets/<tên>-<mã nội dung>.js|css. Tên file đổi mỗi khi nội dung đổi, nên trình duyệt giữ được lâu. */
+export async function uiFile(env, request) {
+  if (!env.ASSETS) return new Response(NOT_BUILT, { status: 500 });
+  const res = await env.ASSETS.fetch(request);
+  if (res.status !== 200 && res.status !== 304) return new Response("Not found", { status: 404 });
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", "private, max-age=31536000, immutable");
+  headers.set("x-content-type-options", "nosniff");
+  return new Response(res.body, { status: res.status, headers });
+}
+
+/** Mã phiên bản giao diện (hiện ở trang /status): hash của index.html, đổi sau mỗi lần deploy có sửa giao diện */
+export async function uiVersion(env, origin) {
+  const res = await indexHtml(env, origin).catch(() => null);
+  return res?.ok ? hash(await res.text()) : "not built";
 }

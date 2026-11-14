@@ -34,7 +34,7 @@ ${error ? `<p class="err">${esc(error)}</p>` : ""}<button>Sign in</button>
 <p class="muted" style="font-size:13px;margin:16px 0 0">Your name is shown in the change log.</p></form>`
   );
 
-export async function statusPage(env) {
+export async function statusPage(env, url) {
   const checks = [
     ["CRISP_IDENTIFIER", !!env.CRISP_IDENTIFIER],
     ["CRISP_KEY", !!env.CRISP_KEY],
@@ -55,6 +55,6 @@ ${row("Help center", meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} arti
 ${row("Mode", esc(MODE_LABELS[currentMode(env)]))}
 ${row("Working hours", bh ? (parseBusinessHours(bh) ? `<code>${esc(bh)}</code>` : `✗ Invalid format: <code>${esc(bh)}</code>`) : "Not set")}
 ${row("Model", `<code>${esc(cfg(env, "OPENAI_MODEL"))}</code>`)}
-${row("Admin UI version", `<code>${await uiVersion()}</code>`)}</table></div>`
+${row("Admin UI version", `<code>${esc(await uiVersion(env, url.origin))}</code>`)}</table></div>`
   );
 }

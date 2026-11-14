@@ -4,13 +4,18 @@
   "name": "transtore-bot-prod",
   "main": "src/worker.js",
   // Đẩy lên y nguyên từng file trong src/ (không gộp), để editor trên dashboard vẫn thấy đúng cây thư mục.
-  // .js = code Worker, .txt/.html = văn bản (giao diện admin).
   "no_bundle": true,
   "find_additional_modules": true,
   "base_dir": "src",
   "rules": [
     { "type": "ESModule", "globs": ["**/*.js"] }
   ],
+  // Giao diện /admin (React, mã nguồn ở admin-ui/). Trước mỗi lần dev/deploy wrangler tự chạy `npm run build`
+  // để gói giao diện vào build/, rồi đưa build/ lên cùng Worker. watch_dir: khi `npm run dev`, sửa file ở src/ hay
+  // admin-ui/ đều nạp lại (thiếu "src" thì sửa code Worker không được nạp lại). run_worker_first: mọi request đi qua
+  // Worker trước, nên phải đăng nhập mới tải được giao diện (xem src/admin/ui.js).
+  "build": { "command": "npm run build", "watch_dir": ["src", "admin-ui"] },
+  "assets": { "directory": "./build", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none", "not_found_handling": "none" },
   "workers_dev": true,
   "preview_urls": false,
   "compatibility_date": "2026-11-11",

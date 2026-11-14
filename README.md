@@ -13,7 +13,7 @@ Webhook Crisp gửi về `/crisp/hooks` của bot thật.
 
 Code không chứa nội dung riêng của app nào: sản phẩm, help center, múi giờ, cách trả lời, khi nào chuyển người… đều điền trên admin. Muốn chạy bot cho app khác: xem [Dùng bot cho app khác](#dùng-bot-cho-app-khác).
 
-Sơ đồ từng file trong code: xem [src/README.txt](src/README.txt).
+Code gồm 2 phần: Worker (bot + API của admin) trong [src/](src/), và giao diện trang admin viết bằng React trong [admin-ui/](admin-ui/). Sơ đồ từng file: xem [src/README.txt](src/README.txt).
 
 ## Cài lần đầu
 
@@ -36,29 +36,35 @@ npm run dev
 Mở http://localhost:8787. KV ở máy là KV giả, trống, không đụng dữ liệu thật.
 Cron mỗi phút không tự chạy ở máy.
 
+Lệnh này tự build giao diện admin trước khi chạy, và build lại mỗi khi sửa file trong `src/` hoặc `admin-ui/` (tải lại trang để thấy).
+
+Khi sửa giao diện nhiều, mở thêm một cửa sổ terminal và chạy:
+
+```bash
+npm run dev:ui
+```
+
+Đăng nhập ở http://localhost:8787/admin trước, rồi mở http://localhost:5173/admin/. Trang này tự cập nhật ngay khi lưu file, không cần tải lại. `npm run dev` vẫn phải chạy song song vì dữ liệu lấy từ đó.
+
 ## Kiểm tra trước khi đưa lên
 
 ```bash
 npm run check
 ```
 
-Gói code giống lúc deploy nhưng không gửi lên đâu cả. Lỗi import hay thiếu file sẽ hiện ở đây.
+Build giao diện và gói code giống lúc deploy nhưng không gửi lên đâu cả. Lỗi import, lỗi cú pháp trong giao diện hay thiếu file sẽ hiện ở đây.
 
 ## Đưa code lên Cloudflare
 
-Có 2 cách, kết quả như nhau: bản mới chạy ngay cho khách.
-
-**Cách 1 (nên dùng):** một lệnh đẩy hết file và config.
+Một lệnh build giao diện, rồi đẩy hết file và config. Bản mới chạy ngay cho khách.
 
 ```bash
 npm run deploy
 ```
 
-**Cách 2:** mở editor trên dashboard Cloudflare, sửa hoặc dán lại đúng những file đã đổi, rồi bấm Deploy.
-
 Lưu ý:
 
-- Chọn local làm bản gốc. Sửa trên dashboard rồi deploy từ local thì phần sửa trên dashboard bị ghi đè.
+- Local là bản gốc. Đừng sửa code trên dashboard Cloudflare: lần deploy sau từ local sẽ ghi đè, và giao diện admin trên đó là bản đã build nên không sửa được.
 - Khoá bí mật (Crisp, `ADMIN_KEY`) nằm ở Settings → Variables and Secrets trên Cloudflare. Deploy không đụng tới. Khoá OpenAI nhập trong admin → Settings → AI (hoặc đặt `OPENAI_API_KEY` trên Cloudflare).
 - `vars`, KV `KB`, cron `* * * * *` khai trong [wrangler.jsonc](wrangler.jsonc). Đổi trên dashboard thì phải sửa cả ở đây, không thì lần deploy sau sẽ đè lại.
 - Deploy nhầm: `npm run versions` để xem các bản, hoặc vào tab Deployments trên dashboard để quay lại bản trước.
@@ -131,4 +137,4 @@ npx wrangler secret put ADMIN_KEY -c wrangler.myapp.jsonc
 
 **8. Thử rồi bật.** Hỏi vài câu trong Test the bot, sau đó chọn Bot mode.
 
-Cập nhật code cho app đó về sau: chạy lại lệnh ở bước 3. `npm run deploy` (không có `-c`) chỉ đưa lên bot trong [wrangler.jsonc](wrangler.jsonc).
+Lệnh ở bước 3 tự build giao diện admin trước khi đưa lên (cần đã chạy `npm install`). Cập nhật code cho app đó về sau: chạy lại lệnh ở bước 3. `npm run deploy` (không có `-c`) chỉ đưa lên bot trong [wrangler.jsonc](wrangler.jsonc).
