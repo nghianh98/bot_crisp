@@ -39,7 +39,9 @@ export function lastIsBot(env, messages) {
   return !!last && isBotMessage(env, last) && !(last.type === "picker" && last.content?.choices?.some((c) => c.selected));
 }
 
-export async function processFollowups(env) {
+// reply: hàm trả lời khách (bot.js → respond), truyền từ worker.js để không import vòng bot.js ↔ followup.js.
+// Dùng cho mục "reply": khách nhắn trong lúc bot đang chờ (đã chuyển người), tới hạn thì bot trả lời.
+export async function processFollowups(env, { reply } = {}) {
   if (!env.KB) return;
   const q = await getJSON(env, QUEUE);
   if (!q || !Object.keys(q).length) return;
@@ -60,6 +62,11 @@ export async function processFollowups(env) {
     changed = true;
     try {
       const st = await getState(env, sid);
+      if (e.step === "reply") {
+        // respond() tự kiểm lại: khách vẫn chờ, nhân viên chưa vào, bot chưa trả lời, chế độ bot
+        if (st !== "human" && reply) await reply(env, e.w, sid);
+        continue;
+      }
       if (st === "human" || st === "handoff" || st === "failed") continue;
       const messages = await crisp(env, "GET", `/website/${e.w}/conversation/${sid}/messages`);
       if (!lastIsBot(env, messages)) continue; // khách đã nhắn lại hoặc nhân viên đã vào

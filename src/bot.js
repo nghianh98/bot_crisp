@@ -101,12 +101,18 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
     earlierCase = true;
   }
 
-  // Đã chuyển người: vẫn trấn an khách, nhưng không quá 1 lần mỗi X phút.
+  // Đã chuyển người: bot vẫn trả lời, nhưng cách tin trước của bot ít nhất X phút (Escalation → cooldown).
+  // Khách nhắn sớm hơn thì KHÔNG bỏ tin: hẹn trả lời lúc hết thời gian chờ (cron mỗi phút, xem followup.js).
+  // Ghi chú riêng cho team (note) không tính là tin của bot.
   // (state "failed" = lần trước AI hỏng, bot đã gửi câu dự phòng: lần này thử trả lời lại bình thường.)
   const handedOff = state === "handoff";
   if (handedOff) {
-    const lastBot = (messages || []).filter((x) => isBotMessage(env, x)).reduce((t, x) => Math.max(t, x.timestamp || 0), 0);
-    if (Date.now() - lastBot < env.__esc.cooldownMin * 60000) return;
+    const lastBot = (messages || []).filter((x) => x.type !== "note" && isBotMessage(env, x)).reduce((t, x) => Math.max(t, x.timestamp || 0), 0);
+    const wait = lastBot + env.__esc.cooldownMin * 60000 - Date.now();
+    if (wait > 0) {
+      await scheduleFollowup(env, sessionId, { w: websiteId, step: "reply", from: Date.now(), due: Date.now() + wait });
+      return;
+    }
   }
 
   const limit = Number(cfg(env, "HISTORY_LIMIT"));

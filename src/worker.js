@@ -23,7 +23,7 @@ import { api } from "./admin/api.js";
 import { isAdmin, keyLogin, login, logout } from "./admin/auth.js";
 import { loginPage, statusPage } from "./admin/pages.js";
 import { adminPage, uiFile } from "./admin/ui.js";
-import { handleEvent } from "./bot.js";
+import { handleEvent, respond } from "./bot.js";
 import { cfg, withConfig } from "./config.js";
 import { verifySignature } from "./crisp.js";
 import { processFollowups } from "./followup.js";
@@ -56,7 +56,7 @@ export default {
   async scheduled(event, env, ctx) {
     // Mỗi phút: tiếp tục / bắt đầu đồng bộ kiến thức khi tới hạn, và gửi lời nhắc khách tới hạn. Lúc rảnh chỉ tốn 2 lần đọc KV.
     ctx.waitUntil(cronSync(env).catch((e) => console.error("[kb] Lỗi:", e?.stack || e)));
-    ctx.waitUntil(processFollowups(env).catch((e) => console.error("[followup] Lỗi:", e?.stack || e)));
+    ctx.waitUntil(processFollowups(env, { reply: respond }).catch((e) => console.error("[followup] Lỗi:", e?.stack || e)));
   },
 };
 
