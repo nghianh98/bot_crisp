@@ -36,6 +36,9 @@ export const DEFAULTS = {
   CLASSIFY_ON_RESOLVE: "true",
   DEBOUNCE_MS: "2500",
   HISTORY_LIMIT: "20",
+  // Đã chuyển người mà khách im lâu hơn số giờ này rồi mới nhắn lại → coi là cuộc chat mới: bot trả lời bình thường,
+  // không nhắc lại "team đang giữ case" (trừ khi khách hỏi về case cũ). Hội thoại trên Crisp không tự đóng nên cần mốc này.
+  HANDOFF_RESET_HOURS: "2",
   PAGES_PER_RUN: "6",
   FOLLOWUPS_PER_RUN: "8",
   VERIFY_HOOKS: "true",

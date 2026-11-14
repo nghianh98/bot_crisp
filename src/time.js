@@ -42,12 +42,22 @@ export function teamAvailabilityNote(env) {
   const tz = `GMT+${cfg(env, "UTC_OFFSET_HOURS")}`;
   if (inHours) return `Team support works ${cfg(env, "BUSINESS_HOURS")} (${tz}); it is within working hours now, so a teammate usually replies within a few hours.`;
   let wait = 0;
+  let when = "";
   for (let i = 0; i < 8; i++) {
     const wd = ((now.weekday - 1 + i) % 7) + 1;
     if (!bh.days.has(wd)) continue;
     const startToday = i * 1440 + bh.open - now.minutes;
-    if (startToday > 0) { wait = startToday; break; }
+    if (startToday > 0) {
+      wait = startToday;
+      when = i === 0 ? "today" : i === 1 ? `tomorrow (${WEEKDAYS[wd]})` : `on ${WEEKDAYS[wd]}`;
+      break;
+    }
   }
   const hours = Math.max(1, Math.round(wait / 60));
-  return `Team support works ${cfg(env, "BUSINESS_HOURS")} (${tz}). It is outside working hours now; the team is back in about ${hours} hour${hours > 1 ? "s" : ""} (at ${hhmm(bh.open)} ${tz}). Tell the customer this when you hand off.`;
+  const at = `${when} at ${hhmm(bh.open)} ${tz}`;
+  // Nói "thứ Hai lúc 08:00" thay vì "khoảng 46 tiếng nữa" (nghe như máy); còn ít giờ thì nói số giờ cũng được
+  const say = hours <= 3 ? `"${at}" or "in about ${hours} hour${hours > 1 ? "s" : ""}"` : `"${at}", not a number of hours`;
+  return `Team support works ${cfg(env, "BUSINESS_HOURS")} (${tz}). It is outside working hours now; the team is back ${at} (about ${hours} hour${hours > 1 ? "s" : ""} from now). Tell the customer this when you hand off: say ${say}.`;
 }
+
+const WEEKDAYS = { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday" };

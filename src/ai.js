@@ -203,11 +203,19 @@ export async function callOpenAI(env, { instructions, input, schemaName, schema,
   }
 }
 
-export const HANDED_OFF_NOTE = `IMPORTANT: this conversation has ALREADY been handed off to the support team; they will see it in their inbox. The customer is now waiting.
-- Do not hand off again and do not repeat the same message as before. Do not ask again for details already given.
-- Reply in 1-2 short sentences: acknowledge their latest message, reassure them the team has their case, and say when the team is expected to reply.
-- If they ask a NEW question that the snippets or help center answer, answer it normally (with steps and link).
-- Use action "answer" (or "handoff" only if it is a completely new problem).`;
+export const HANDED_OFF_NOTE = `IMPORTANT: this conversation has ALREADY been handed off to the support team; it is in their inbox and the customer is waiting for them.
+Reply to what the customer's latest message actually says:
+- A greeting, thanks, "ok", an emoji or small talk: reply in a few natural words, the way a person would (greet back and ask how you can help, "You're welcome!", a short kind line for a sad or angry emoji). Do not mention their case or the team's reply time.
+- A NEW question that the snippets or help center answer: answer it normally (with steps and link).
+- About their case (an update, when or whether someone will reply, upset about waiting): in 1-2 short sentences, say the team has their case and when the team is expected to reply.
+- More details for their issue (a screenshot, a link, what they tried): thank them in one short sentence and say the team will see it.
+Never repeat what you already told them in this conversation (for example that the team has their case, or when the team will reply) unless they ask about it again.
+Do not hand off again and do not ask again for details already given. Use action "answer" (or "handoff" only if it is a completely new problem that needs a human).`;
+
+// Khách quay lại sau một lúc lâu (xem HANDOFF_RESET_HOURS): case cũ vẫn chờ team, tin mới là cuộc chat mới
+export const EARLIER_CASE_NOTE = `Earlier in this chat, before a pause of a few hours, the customer's issue was handed off to the support team, and that case is still waiting for the team. The customer's latest message starts a new conversation:
+- Reply to the latest message on its own, following the normal rules: greet back, answer the new question, or hand off a new problem that needs a human.
+- Do not bring up the earlier case or the team's reply time unless the customer asks about it (an update, whether someone will reply, or the same problem as before).`;
 
 // Trả lời khách. Khách đang chờ và Cloudflare chỉ cho bot chạy thêm 30 giây sau khi nhận tin của Crisp, nên:
 // lần 1 dùng mức nghĩ cài trong Settings, tối đa AI_FIRST_MS; nếu hỏng vì lỗi tạm thời thì thử lại 1 lần,
@@ -227,10 +235,10 @@ ${rows.map(([k, v]) => `- ${label(k)}: ${v}`).join("\n")}
 Never ask the customer for anything in customer_info (for example their store URL, store domain, plan or name): use it. When you ask for details or hand off, ask only for what is still missing, and don't list customer_info items as "missing" in handoff_brief. Use the plan to give the right answer when it depends on the plan.`;
 }
 
-export async function generateReply(env, history, { handedOff = false, customer = null } = {}) {
+export async function generateReply(env, history, { handedOff = false, customer = null, earlierCase = false } = {}) {
   const base = await buildInstructions(env);
   const req = {
-    instructions: [base, customerBlock(customer), handedOff && HANDED_OFF_NOTE].filter(Boolean).join("\n\n"),
+    instructions: [base, customerBlock(customer), handedOff ? HANDED_OFF_NOTE : earlierCase && EARLIER_CASE_NOTE].filter(Boolean).join("\n\n"),
     input: history.map((h) => ({ role: h.role, content: h.content })),
     schemaName: "support_reply",
     schema: replySchema(tagKeys(env), { brief: briefOn(env) }),

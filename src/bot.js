@@ -86,11 +86,20 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   const path = `/website/${websiteId}/conversation/${sessionId}/messages`;
   const messages = await crisp(env, "GET", path);
   if (!feedbackNo && !shouldAnswer(messages, fingerprint)) return;
-  const state = await getState(env, sessionId);
+  let state = await getState(env, sessionId);
   if (state === "human") return;
   const mode = currentMode(env);
   if (mode === "off") return;
   if (mode === "offline" && (await operatorsOnline(env, websiteId))) return;
+
+  // Đã chuyển người nhưng khách im lâu rồi mới nhắn lại ("hi there" vài tiếng sau): coi là cuộc chat mới.
+  // Case cũ vẫn nằm trong inbox của team (segment giữ nguyên); AI chỉ nhắc tới nó khi khách hỏi.
+  let earlierCase = false;
+  if (state === "handoff" && pauseHours(messages) >= Number(cfg(env, "HANDOFF_RESET_HOURS"))) {
+    await clearState(env, sessionId);
+    state = null;
+    earlierCase = true;
+  }
 
   // Đã chuyển người: vẫn trấn an khách, nhưng không quá 1 lần mỗi X phút.
   // (state "failed" = lần trước AI hỏng, bot đã gửi câu dự phòng: lần này thử trả lời lại bình thường.)
@@ -109,7 +118,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   const [customer] = await Promise.all([getCustomer(env, websiteId, sessionId), compose(env, websiteId, sessionId, true)]);
   let r;
   try {
-    r = await generateReply(env, history, { handedOff, customer });
+    r = await generateReply(env, history, { handedOff, customer, earlierCase });
   } catch (e) {
     console.error("[ai] Lỗi OpenAI:", e?.message || e);
     if (handedOff || state === "failed") {
@@ -224,6 +233,15 @@ export function shouldAnswer(messages, fingerprint) {
   if (lastUserIdx < 0) return false;
   if (fingerprint != null && sorted[lastUserIdx].fingerprint != null && sorted[lastUserIdx].fingerprint !== fingerprint) return false;
   return !sorted.slice(lastUserIdx + 1).some((x) => x.from === "operator");
+}
+
+// Khách đã im bao lâu (giờ) trước loạt tin mới nhất: từ tin trước đó (của ai cũng được) tới tin đầu của loạt tin cuối của khách
+export function pauseHours(messages) {
+  const sorted = [...(messages || [])].filter((x) => x.type !== "note" && x.timestamp).sort((a, b) => a.timestamp - b.timestamp);
+  let i = sorted.length - 1;
+  if (i < 0 || sorted[i].from !== "user") return 0;
+  while (i > 0 && sorted[i - 1].from === "user") i--;
+  return i > 0 ? (sorted[i].timestamp - sorted[i - 1].timestamp) / 3600000 : 0;
 }
 
 export function toHistory(messages, limit, keepTrailingAssistant = false) {
