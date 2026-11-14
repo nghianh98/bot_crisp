@@ -2,15 +2,23 @@
 // Gọi API Crisp: gửi tin, đọc hội thoại, gắn segment, kiểm tra chữ ký webhook.
 import { FEEDBACK_ID, cfg } from "./config.js";
 
-export async function verifySignature(secret, body, timestamp, signature) {
+// Crisp ký chuỗi "[timestamp;body]" bằng HMAC-SHA256 với secret của hook.
+// Kiểm trên đúng chuỗi body Crisp gửi tới (raw) trước; nếu không khớp thì thử JSON.stringify(body) như code cũ.
+// (Đọc JSON rồi stringify lại có thể lệch với bản Crisp ký, vd khi tin có dấu tiếng Việt hay emoji được escape.)
+export async function verifySignature(secret, raw, body, timestamp, signature) {
   if (!secret || !timestamp || !signature) return false;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`[${timestamp};${JSON.stringify(body)}]`));
-  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  if (hex.length !== signature.length) return false;
-  let diff = 0;
-  for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ signature.charCodeAt(i);
-  return diff === 0;
+  const given = String(signature).trim().toLowerCase();
+  for (const text of new Set([raw, JSON.stringify(body)])) {
+    if (typeof text !== "string") continue;
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`[${timestamp};${text}]`));
+    const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (hex.length !== given.length) continue;
+    let diff = 0;
+    for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ given.charCodeAt(i);
+    if (diff === 0) return true;
+  }
+  return false;
 }
 
 export const isBotMessage = (env, x) => x.from === "operator" && (x.user?.nickname === cfg(env, "BOT_NAME") || String(x.content?.id || "").startsWith("tb-"));

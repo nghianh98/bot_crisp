@@ -69,9 +69,10 @@ export async function onHook(request, env, ctx) {
     return new Response("bad json", { status: 400 });
   }
   if (cfg(env, "VERIFY_HOOKS") !== "false") {
-    const ok = await verifySignature(env.CRISP_HOOK_SECRET || "", body, request.headers.get("x-crisp-request-timestamp"), request.headers.get("x-crisp-signature"));
+    const ok = await verifySignature(env.CRISP_HOOK_SECRET || "", raw, body, request.headers.get("x-crisp-request-timestamp"), request.headers.get("x-crisp-signature"));
     if (!ok) {
-      console.warn("[hook] Sai chữ ký, bỏ qua", body?.event);
+      // Không ghi secret hay chữ ký ra log; chỉ ghi đủ để biết lỗi nằm ở đâu
+      console.warn("[hook] Sai chữ ký, bỏ qua", body?.event, `(CRISP_HOOK_SECRET ${env.CRISP_HOOK_SECRET ? "có" : "THIẾU"}, có header chữ ký: ${!!request.headers.get("x-crisp-signature")})`);
       return new Response("ok");
     }
   }
