@@ -493,11 +493,22 @@ export async function apiKb(env, body, who) {
   return { kb: kbView(env, next, kbCfg, await getJSON(env, SYNC)) };
 }
 
+// Ảnh đính kèm trong khung Test the bot: ảnh đã thu nhỏ trên trình duyệt (data URL), hoặc một link https
+const MAX_TEST_IMAGE_CHARS = 1400000; // khoảng 1 MB ảnh
+const testImages = (list) =>
+  (Array.isArray(list) ? list : [])
+    .filter((u) => typeof u === "string" && (/^data:image\/(png|jpeg|webp|gif);base64,/.test(u.slice(0, 40)) ? u.length <= MAX_TEST_IMAGE_CHARS : HTTPS_LINK.test(u) && u.length <= 2000))
+    .slice(0, 3);
+const HTTPS_LINK = /^https:\/\/[^\s"'<>]+$/;
+
 export async function apiTest(env, body) {
   let msgs = (Array.isArray(body.messages) ? body.messages : [])
     .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
     .slice(-20)
-    .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
+    .map((m) => {
+      const images = m.role === "user" ? testImages(m.images) : [];
+      return images.length ? { role: m.role, content: m.content.slice(0, 2000), images } : { role: m.role, content: m.content.slice(0, 2000) };
+    });
   while (msgs.length && msgs[0].role !== "user") msgs = msgs.slice(1);
   if (!msgs.length || msgs.at(-1).role !== "user") bad("Type a customer question");
   // Thử một cách dùng snippet khác với cách đang lưu, chỉ cho lần hỏi thử này (bot thật không đổi)

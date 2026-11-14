@@ -13,7 +13,8 @@ const MODES = [
   ["offline", "When team is offline", "The bot only replies when nobody on the team is online in Crisp."],
   ["always", "Always on", "The bot replies to every message, even when the team is online."],
 ];
-const EFFORT = [["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"], ["high", "High"]];
+const EFFORT = [["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"]]; // the levels the bot accepts (config.js)
+const IMAGES = [["on", "The AI looks at them"], ["off", "Ignore them (the bot only sees the file name)"]];
 
 /** "Mon-Fri 08:00-18:00" → { days: Set of 0..6, open, close } */
 export function parseBH(s) {
@@ -65,6 +66,7 @@ function draftOf(S) {
     helpSelector: s.helpSelector,
     model: s.model,
     effort: pick(EFFORT.map((e) => e[0]), s.effort),
+    customerImages: pick(IMAGES.map((e) => e[0]), s.customerImages),
   };
 }
 
@@ -265,6 +267,7 @@ export default function Settings() {
       helpSelector: d.helpSelector.trim(),
       model: d.model.trim() || (models?.list?.length ? s.model : ""),
       effort: d.effort,
+      customerImages: d.customerImages,
     };
     const r = await api("/api/settings", { settings });
     setS(r);
@@ -454,6 +457,18 @@ export default function Settings() {
             <label htmlFor="ef">Reasoning effort</label>
             <select className="in" id="ef" style={{ width: "auto" }} value={d.effort} onChange={up("effort")}>
               {EFFORT.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="fr">
+            <label htmlFor="ci">
+              Images from customers<small>Screenshots and photos customers send in the chat. The AI looks at the newest few with each reply, which adds a little AI cost per image. Try it with "Attach a screenshot" in Test the bot.</small>
+            </label>
+            <select className="in" id="ci" style={{ width: "auto" }} value={d.customerImages} onChange={up("customerImages")}>
+              {IMAGES.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
                 </option>

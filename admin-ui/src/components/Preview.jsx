@@ -1,9 +1,9 @@
 // "Test the bot" panel: chat with the bot using the saved knowledge, and see why it answered as it did.
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.js";
-import { customerData, pvAsk, pvClose, pvFeedback, pvReset, setPreview, usePreview } from "../lib/preview.js";
+import { MAX_ATTACH, customerData, pvAsk, pvAttach, pvClose, pvDetach, pvFeedback, pvReset, setPreview, usePreview } from "../lib/preview.js";
 import { setS, useStore } from "../lib/store.js";
-import { toast } from "../lib/toast.js";
+import { fail, toast } from "../lib/toast.js";
 import { Chips, SrcLinks } from "./common.jsx";
 import { openImprove } from "./Snippet.jsx";
 import { Btn, Modal, closeModal, openModal } from "./ui.jsx";
@@ -34,8 +34,9 @@ function BotMessage({ m, i, initial }) {
         {r ? (
           <div className="trace">
             <div className="chips">
-              <Chips x={{ act: r.action, cat: r.category, urg: r.urgent, gap: r.knowledge_gap, pri: r.priority }} />
+              <Chips x={{ act: r.action, cat: r.category, urg: r.urgent, gap: r.knowledge_gap, pri: r.priority, img: r.images }} />
             </div>
+            {r.imagesFailed ? <div>The AI couldn't open the image, so it answered without seeing it ({r.imagesFailed}).</div> : null}
             <div>
               Sources: <SrcLinks sources={r.sources} />
             </div>
@@ -116,12 +117,24 @@ export default function Preview() {
     return () => clearTimeout(t);
   }, [P.focus]);
 
+  const file = useRef(null);
   const send = (e) => {
     e.preventDefault();
+    if (P.busy) return;
     const v = ta.current.value;
+    const att = P.att;
     ta.current.value = "";
     ta.current.style.height = "";
-    pvAsk(v);
+    setPreview({ att: [] });
+    pvAsk(v, att);
+  };
+  const attach = (files) => pvAttach([...files].filter((f) => f.type.startsWith("image/"))).catch(fail);
+  // A screenshot pasted into the question box is attached, the way a customer would send it
+  const paste = (e) => {
+    const imgs = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    e.preventDefault();
+    attach(imgs);
   };
   const grow = () => {
     ta.current.style.height = "";
@@ -190,7 +203,10 @@ export default function Preview() {
             {P.msgs.map((m, i) =>
               m.role === "user" ? (
                 <div className="msg u" key={i}>
-                  {m.content}
+                  {m.text ?? m.content}
+                  {(m.images || []).map((src, k) => (
+                    <img key={k} src={src} alt="Attached screenshot" />
+                  ))}
                 </div>
               ) : m.role === "error" ? (
                 <div className="pv-err" key={i}>
@@ -215,8 +231,36 @@ export default function Preview() {
           </>
         )}
       </div>
+      <div className="pv-att">
+        {P.att.map((a, i) => (
+          <span className="pv-thumb" key={i}>
+            <img src={a.src} alt={a.name} />
+            <button type="button" aria-label={`Remove ${a.name}`} onClick={() => pvDetach(i)}>
+              ✕
+            </button>
+          </span>
+        ))}
+        {P.att.length < MAX_ATTACH ? (
+          <button type="button" className="lk" onClick={() => file.current.click()}>
+            Attach a screenshot
+          </button>
+        ) : null}
+        <span className="muted">{P.att.length ? "" : "or paste one into the box"}</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          hidden
+          ref={file}
+          onChange={(e) => {
+            const picked = [...e.target.files];
+            e.target.value = ""; // the same file can be picked again
+            attach(picked);
+          }}
+        />
+      </div>
       <form className="pv-in" id="pvForm" ref={form} onSubmit={send}>
-        <textarea id="pvText" rows={1} placeholder="Ask like a customer would" aria-label="Customer question" ref={ta} onKeyDown={enter} onInput={grow} />
+        <textarea id="pvText" rows={1} placeholder="Ask like a customer would" aria-label="Customer question" ref={ta} onKeyDown={enter} onInput={grow} onPaste={paste} />
         <button className="btn pri" type="submit">
           Send
         </button>

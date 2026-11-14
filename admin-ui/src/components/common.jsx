@@ -14,6 +14,7 @@ export function Chips({ x }) {
   if (x.pri === "P1" || x.pri === "P2") chip(x.pri === "P1" ? "c-urgent" : "c-gap", x.pri, `Priority: ${x.pri === "P1" ? "critical" : "high"}`);
   if (x.cat) chip("c-tag", tagFull(x.cat), tagLabel(x.cat));
   if (x.err) chip("c-urgent", "AI error", `The AI failed, so the customer got the backup reply: ${x.err}`);
+  if (x.img) chip("", x.img === 1 ? "Looked at 1 image" : `Looked at ${x.img} images`, "Images the customer sent that the AI saw for this reply");
   if (x.urg) chip("c-urgent", "Angry customer");
   if (x.gap) chip("c-gap", "Missing knowledge");
   if (x.fb === "up") chip("c-answer", "Rated helpful");

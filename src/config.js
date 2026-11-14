@@ -43,6 +43,10 @@ export const DEFAULTS = {
   // "exact" = câu hỏi khớp snippet thì gửi nguyên văn câu trả lời của snippet. Chọn trên /admin → Knowledge.
   // (Từng snippet có thể đánh dấu "luôn gửi nguyên văn" dù đang ở chế độ knowledge.)
   SNIPPET_MODE: "knowledge",
+  // Ảnh khách gửi trong chat (ảnh chụp màn hình…): "on" = AI xem ảnh cùng câu hỏi; "off" = bot chỉ thấy tên file.
+  // Bật/tắt trên /admin → Settings → AI. Mỗi câu trả lời chỉ gửi CUSTOMER_IMAGES_MAX ảnh mới nhất (mỗi ảnh tốn thêm chút tiền AI).
+  CUSTOMER_IMAGES: "on",
+  CUSTOMER_IMAGES_MAX: "3",
   PAGES_PER_RUN: "6",
   // Ảnh trong help center: mỗi bước sync cho AI đọc tối đa ngần này ảnh MỚI (ảnh đã đọc thì lấy lại bản đã lưu).
   // Ảnh chưa kịp đọc thì để lần sync sau. Mỗi ảnh tối đa IMAGE_READ_MS mili giây.
@@ -190,6 +194,7 @@ export const SETTINGS_FIELDS = {
   supportEmail: { env: "SUPPORT_EMAIL", label: "Support email", max: 120, check: (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), error: "That email address isn't valid" },
   model: { env: "OPENAI_MODEL", label: "AI model", max: 60, required: true },
   effort: { env: "OPENAI_REASONING_EFFORT", label: "Reasoning effort", values: ["off", "low", "medium"] },
+  customerImages: { env: "CUSTOMER_IMAGES", label: "Images from customers", values: ["on", "off"] },
 };
 
 export const LOG_MAX = 300;

@@ -194,6 +194,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
     q: clip(question, 300, true), a: clip(r.reply, 700, true),
     act: r.action, cat: r.category, urg: !!r.urgent, gap: !!r.knowledge_gap, pri: r.priority || undefined,
     src: (r.sources || []).slice(0, 5).map((x) => clip(x, 200)), ho: handedOff || undefined,
+    img: r.images || undefined, // số ảnh của khách AI đã xem cho câu trả lời này
     err: r.failed || undefined, // AI hỏng, khách nhận câu dự phòng (trang Conversations hiện nhãn "AI error")
   });
   if (!handedOff && r.action !== "handoff") await scheduleAfterReply(env, websiteId, sessionId, r.action);
@@ -251,6 +252,10 @@ export function pauseHours(messages) {
   return i > 0 ? (sorted[i].timestamp - sorted[i - 1].timestamp) / 3600000 : 0;
 }
 
+// File khách gửi có phải ảnh AI đọc được không (Crisp: content = { name, url, type })
+export const isImageFile = (c) => /^image\/(png|jpe?g|webp|gif)$/i.test(c?.type || "") && /^https:\/\//.test(c?.url || "");
+
+// → [{ role, content, images? }]: images = link các ảnh khách gửi trong lượt đó
 export function toHistory(messages, limit, keepTrailingAssistant = false) {
   const out = [];
   const sorted = [...(messages || [])].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -259,17 +264,22 @@ export function toHistory(messages, limit, keepTrailingAssistant = false) {
     let role = msg.from === "user" ? "user" : msg.from === "operator" ? "assistant" : null;
     if (!role) continue;
     let text;
+    let image = null; // ảnh khách gửi: AI xem được (ai.js), khác các loại file còn lại chỉ có tên
     if (msg.type === "text" && typeof msg.content === "string") text = msg.content;
-    else if (msg.type === "file") text = `[sent a file: ${msg.content?.name || "file"}]`;
-    else if (msg.type === "picker") {
+    else if (msg.type === "file") {
+      text = `[sent a file: ${msg.content?.name || "file"}]`;
+      if (role === "user" && isImageFile(msg.content)) image = msg.content.url;
+    } else if (msg.type === "picker") {
       const sel = msg.content?.choices?.find((c) => c.selected);
       if (sel) { role = "user"; text = sel.label; } // khách đã bấm chọn
       else if (role === "assistant") text = msg.content?.text; // câu hỏi kèm nút của bot
     }
     if (!text || !text.trim()) continue;
     const prev = out.at(-1);
-    if (prev && prev.role === role) { if (!prev.content.endsWith(text)) prev.content += "\n" + text; }
-    else out.push({ role, content: text });
+    if (prev && prev.role === role) {
+      if (!prev.content.endsWith(text)) prev.content += "\n" + text;
+      if (image && !prev.images?.includes(image)) (prev.images ||= []).push(image);
+    } else out.push(image ? { role, content: text, images: [image] } : { role, content: text });
   }
   let h = out.slice(-limit);
   while (h.length && h[0].role !== "user") h = h.slice(1);
