@@ -8,7 +8,7 @@ import { useStore } from '../lib/store.js';
 const MODE_SENTENCE = {
 	off: 'The bot is off: only your team answers customers.',
 	offline: 'The bot answers when nobody on the team is online in Crisp.',
-	always: 'The bot answers every message, even when the team is online. !!!',
+	always: 'The bot answers every message, even when the team is online.',
 };
 
 function statusSentence(S) {
