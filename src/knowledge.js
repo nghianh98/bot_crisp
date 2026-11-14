@@ -1,7 +1,8 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // Kiến thức của bot: sync help center và trang website vào KV (bấm Sync now trên /admin hoặc tự động theo lịch).
+import { callOpenAI, productLine } from "./ai.js";
 import { cfg, withConfig } from "./config.js";
-import { getJSON, hash, list, putJSON, sleep } from "./util.js";
+import { clip, getJSON, hash, list, putJSON, sleep } from "./util.js";
 
 const UA = { "User-Agent": "SupportBot-KB/2.0" };
 
@@ -63,10 +64,14 @@ export const cleanText = (s) =>
     .replace(/\u00a0/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'")
     .replace(/\u200b/g, "").replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 
+// Chỗ đặt ảnh trong chữ của bài: ⟦img:N⟧, lúc lưu thay bằng chú thích + chữ AI đọc được trong ảnh (xem withImages)
+const IMG_MARK = (n) => `\n⟦img:${n}⟧\n`;
+
 export async function extractPage(env, url) {
   const res = await fetch(url, { headers: UA });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
   let title = "", main = "", article = "", body = "", skip = 0;
+  const imgs = { main: [], article: [] };
   const blocks = { h1: "\n# ", h2: "\n## ", h3: "\n### ", h4: "\n### ", li: "\n- ", p: "\n", td: " | ", th: " | ", tr: "\n", pre: "\n", blockquote: "\n" };
   const rw = new HTMLRewriter().on("title", { text: (t) => void (title += t.text) });
   if (new URL(url).origin === helpOrigin(env)) {
@@ -77,6 +82,18 @@ export async function extractPage(env, url) {
     }
     rw.on(".theme-doc-markdown", { text: (t) => void (main += t.text) });
     rw.on("article", { text: (t) => void (article += t.text) });
+    // Ảnh trong bài (ảnh chụp màn hình, bảng, danh sách…): nhớ chỗ đặt + link + chú thích
+    const onImg = (where) => ({
+      element(el) {
+        const src = imageUrl(el.getAttribute("src"), url);
+        if (!src) return;
+        const n = imgs[where].push({ src, alt: cleanText(el.getAttribute("alt") || "") }) - 1;
+        if (where === "main") main += IMG_MARK(n);
+        else article += IMG_MARK(n);
+      },
+    });
+    rw.on(".theme-doc-markdown img", onImg("main"));
+    rw.on("article img", onImg("article"));
   }
   // Trang website bất kỳ: lấy chữ trong body, bỏ menu, footer, script
   rw.on("script,style,noscript,svg,nav,footer,form,iframe,template", {
@@ -87,15 +104,87 @@ export async function extractPage(env, url) {
   for (const [tag, prefix] of Object.entries({ ...blocks, div: "\n", section: "\n", br: "\n" })) rw.on(`body ${tag}`, { element: () => void (body += prefix) });
   rw.on("body", { text: (t) => void (skip ? 0 : (body += t.text)) });
   await rw.transform(res).arrayBuffer();
-  const text = (cleanText(main) || cleanText(article) || cleanText(body)).slice(0, 30000);
+  const noImg = (s) => s.replace(/⟦img:\d+⟧/g, "").trim();
+  const [text, images] = noImg(cleanText(main)) ? [cleanText(main), imgs.main] : noImg(cleanText(article)) ? [cleanText(article), imgs.article] : [cleanText(body), []];
   const h1 = text.match(/^# (.+)$/m)?.[1];
-  return { url, title: (h1 || cleanText(title).split("|")[0] || url).trim(), body: text };
+  return { url, title: (h1 || cleanText(title).split("|")[0] || url).trim(), body: text, images };
+}
+
+// Link ảnh đầy đủ; bỏ ảnh nhúng (data:) và hình vẽ .svg (icon, logo)
+function imageUrl(src, base) {
+  try {
+    const u = new URL(String(src || "").trim(), base);
+    if (!/^https?:$/.test(u.protocol) || /\.svg$/i.test(u.pathname)) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+/* Chữ trong ảnh của help center: nhiều thông tin chỉ nằm trong ảnh (vd danh sách app tương thích là 3 ảnh chụp).
+   Mỗi ảnh cho AI đọc 1 lần, lưu ở img:<hash link ảnh>; sync lần sau dùng lại, không tốn thêm.
+   Help center (Docusaurus) đổi tên file khi ảnh đổi, nên link mới = ảnh mới = đọc lại. */
+const IMG_V = 1; // tăng khi đổi cách đọc ảnh → đọc lại hết
+const IMAGE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["useful", "text"],
+  properties: {
+    useful: { type: "boolean", description: "false when the image has no information a customer could ask about" },
+    text: { type: "string", description: "The information in the image, plain text, one item per line" },
+  },
+};
+
+export async function imageText(env, img, title, budget) {
+  const key = `img:${await hash(img.src)}`;
+  const cached = await getJSON(env, key);
+  if (cached?.v === IMG_V) return cached.text;
+  if (!env.OPENAI_API_KEY || !budget || budget.left <= 0) return null; // chưa đọc: lần sync sau đọc tiếp
+  budget.left--;
+  try {
+    const r = await callOpenAI(env, {
+      instructions: `You read images from the help center of ${productLine(env)}, so that a support bot can answer customers' questions from them.
+Write down the information in the image that a customer could ask about: names in lists (apps, plans, languages, countries…), table rows, settings and their values, menu paths, page titles, button and field labels.
+- Plain text, one item per line. For cards or list entries write "Name: short description".
+- Skip the browser and Shopify admin chrome (side bar icons, top bar), decorative pictures and anything you cannot read.
+- Do not describe colors or layout, and never guess text you cannot read.
+Set useful to false when the image has no such information (a photo, a logo, a decorative picture).`,
+      input: [{ role: "user", content: [
+        { type: "input_text", text: `Article: ${title}\nImage caption: ${img.alt || "(none)"}` },
+        { type: "input_image", image_url: img.src, detail: "high" },
+      ] }],
+      schemaName: "image_text",
+      schema: IMAGE_SCHEMA,
+      effort: "off",
+      timeoutMs: Number(cfg(env, "IMAGE_READ_MS")),
+    });
+    const text = r.useful ? clip(r.text, 4000, true) : "";
+    await putJSON(env, key, { v: IMG_V, src: img.src, text, at: new Date().toISOString() });
+    return text;
+  } catch (e) {
+    console.warn("[kb] Không đọc được ảnh", img.src, e?.message || e);
+    return null;
+  }
+}
+
+// Thay chỗ đặt ảnh bằng "[Image: chú thích]" + chữ trong ảnh. budget: số ảnh MỚI được đọc trong lần chạy này.
+export async function withImages(env, page, budget) {
+  const texts = await Promise.all((page.images || []).map((img) => imageText(env, img, page.title, budget)));
+  const body = page.body.replace(/⟦img:(\d+)⟧/g, (_, n) => {
+    const img = page.images?.[+n];
+    if (!img) return "";
+    const t = texts[+n];
+    const head = img.alt ? `[Image: ${img.alt}]` : t ? "[Image]" : "";
+    return t ? `${head}\n${t}\n[/Image]` : head;
+  });
+  return body.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 30000);
 }
 
 export const articleValue = (page) => `<article url="${page.url}" title="${page.title.replace(/"/g, "'")}">\n${page.body}\n</article>`;
 
-export async function storePage(env, url) {
+export async function storePage(env, url, budget = { left: Number(cfg(env, "IMAGES_PER_RUN")) }) {
   const page = await extractPage(env, url);
+  page.body = await withImages(env, page, budget);
   if (!page.body) return page;
   const key = pageKey(env, url);
   const value = articleValue(page);
@@ -141,9 +230,10 @@ export async function stepSync(env, st, kbCfg) {
   const prevWrite = job.touched;
   const per = Math.max(1, Number(cfg(env, "PAGES_PER_RUN")) || 6);
   const batch = job.urls.slice(job.i, job.i + per);
+  const budget = { left: Number(cfg(env, "IMAGES_PER_RUN")) }; // số ảnh mới AI đọc trong bước này (cả 6 trang dùng chung)
   const results = await Promise.all(
     batch.map((url) =>
-      storePage(env, url).catch((e) => {
+      storePage(env, url, budget).catch((e) => {
         console.warn("[kb] Skipped", url, e.message);
         return null;
       })

@@ -83,6 +83,7 @@ export async function buildInstructions(env) {
 Answering:
 - ${/^auto$/i.test(cfg(env, "BOT_LANGUAGE")) ? "Reply in the customer's language." : `Always reply in ${cfg(env, "BOT_LANGUAGE")}, whatever language the customer writes in.`} Warm, human, to the point, like a helpful support agent in a chat window.
 - Use ONLY the team snippets and the help center articles below. Snippets are written by the ${product} team: if a snippet and an article disagree, the snippet wins.
+- In an article, the text between "[Image: …]" and "[/Image]" was read from a screenshot in that article (for example a list of apps or a settings page): use it like the rest of the article.
 - Never invent features, prices, plans, steps or links.
 - If two articles disagree, give the more cautious answer and say the team can confirm.
 - Answer only what was asked. Do not add extra facts, limits or tips the customer did not ask about.

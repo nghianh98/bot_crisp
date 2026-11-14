@@ -40,6 +40,10 @@ export const DEFAULTS = {
   // không nhắc lại "team đang giữ case" (trừ khi khách hỏi về case cũ). Hội thoại trên Crisp không tự đóng nên cần mốc này.
   HANDOFF_RESET_HOURS: "2",
   PAGES_PER_RUN: "6",
+  // Ảnh trong help center: mỗi bước sync cho AI đọc tối đa ngần này ảnh MỚI (ảnh đã đọc thì lấy lại bản đã lưu).
+  // Ảnh chưa kịp đọc thì để lần sync sau. Mỗi ảnh tối đa IMAGE_READ_MS mili giây.
+  IMAGES_PER_RUN: "12",
+  IMAGE_READ_MS: "20000",
   FOLLOWUPS_PER_RUN: "8",
   VERIFY_HOOKS: "true",
   CRISP_API_BASE: "https://api.crisp.chat",
