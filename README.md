@@ -69,6 +69,17 @@ Lưu ý:
 - `vars`, KV `KB`, cron `* * * * *` khai trong [wrangler.jsonc](wrangler.jsonc). Đổi trên dashboard thì phải sửa cả ở đây, không thì lần deploy sau sẽ đè lại.
 - Deploy nhầm: `npm run versions` để xem các bản, hoặc vào tab Deployments trên dashboard để quay lại bản trước.
 
+### Tự deploy khi push lên GitHub
+
+Repo GitHub `nghianh98/bot_crisp` được nối với worker `transtore-bot-prod` (dashboard Cloudflare → Workers & Pages → `transtore-bot-prod` → Settings → Builds). Mỗi lần push lên nhánh `main`, Cloudflare tự cài thư viện, build giao diện rồi chạy `npx wrangler deploy`: **bot thật đổi ngay**.
+
+- Commit ở máy chưa đổi gì trên bot. Push lên `main` mới đổi, nên chỉ push những gì đã thử xong.
+- Xem từng lần build chạy được hay lỗi: tab Deployments của worker. Build lỗi thì bot giữ nguyên bản đang chạy.
+- `npm run deploy` từ máy vẫn dùng được, kết quả như nhau.
+- Tạm dừng tự deploy: bật **Disable builds** trong Settings → Builds.
+- Máy build của Cloudflare dùng Node 22, ghim trong file `.node-version`.
+- Khoá bí mật không nằm trong repo. Chúng ở Settings → Variables and Secrets của worker, build không đụng tới.
+
 ## Khoá cho bot thật
 
 Mỗi lệnh sẽ hỏi giá trị, gõ vào terminal. Khoá Crisp lấy ở Crisp Marketplace → plugin → Tokens (Production) và Settings → Events.
