@@ -75,7 +75,7 @@ export async function compose(env, websiteId, sessionId, on) {
   } catch {}
 }
 
-// Thông tin app đã gửi vào Crisp cho hội thoại này (session data: store_domain, app_plan, shopify_plan…) + tên khách.
+// Thông tin app đã gửi vào Crisp cho hội thoại này (session data: tài khoản, gói đang dùng…) + tên khách.
 // Không gửi email và mấy thứ giống khoá bí mật cho AI: bot không cần, đỡ lộ dữ liệu khách (team vẫn thấy trong Crisp).
 const SKIP_KEY = /token|secret|password|api.?key|signature|hmac/i;
 const IS_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

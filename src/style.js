@@ -1,7 +1,7 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 /* Văn phong (admin → Writing style). Chỉ là CÔNG CỤ: mọi nội dung văn phong do team tự viết trên admin.
    - rules: luật viết (độ dài, mở đầu, kết, cách ghi bước, link…). null = dùng DEFAULT_RULES (đúng luật cũ trước khi có trang này).
-   - intro: bot tự giới thiệu ở tin đầu (vd "Lio from the Transtore Support Team"). Trống = không giới thiệu.
+   - intro: bot tự giới thiệu ở tin đầu (vd "Alex from the Acme Support Team"). Trống = không giới thiệu.
    - examples: câu trả lời thật của team; bot học GIỌNG từ đó, không lấy thông tin. Thông tin chỉ từ snippet và help center.
    Lưu ở KV cfg:style. */
 import { clip, getJSON, uid } from "./util.js";
@@ -18,7 +18,7 @@ export const EXAMPLES_PER_REPLY = 6; // số câu mẫu gửi cho AI mỗi lần
 export const DEFAULT_RULES = `- Warm, human, to the point, like a helpful support agent in a chat window.
 - Answer only what was asked. Do not add extra facts, limits or tips the customer did not ask about.
 - First line: the direct answer in one short sentence.
-- Steps: a numbered list, one step per line ("1. ...", "2. ..."), max 5 steps, each step one short line. Write menu paths as: Language > Add target language.
+- Steps: a numbered list, one step per line ("1. ...", "2. ..."), max 5 steps, each step one short line. Write menu paths as: Settings > Notifications.
 - When asking the customer for several details, list each one on its own numbered line too.
 - Leave one empty line between the first line, the steps and the link.
 - Link: when an article helps, put its url (the url attribute) alone on the LAST line, prefixed with "Full guide: ". Never put a url inside a sentence. At most one link.

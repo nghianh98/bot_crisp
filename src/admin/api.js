@@ -4,8 +4,8 @@ import { isAdmin, whoOf } from "./auth.js";
 import { callOpenAI, generateReply, listModels, productLine } from "../ai.js";
 import { handoffNote } from "../handoff.js";
 import { cleanCustomer } from "../crisp.js";
-import { AI_FALLBACK_REPLY, AI_KEY, GUIDANCE_CATS, INFO_FIELDS, MAX_TAGS, MODE_LABELS, QUEUE, SETTINGS_FIELDS, TRIGGERS, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, withAiKey, withConfig } from "../config.js";
-import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, stepSync, storePage } from "../knowledge.js";
+import { AI_KEY, FOLLOWUP_DEFAULT, GUIDANCE_CATS, MAX_CUSTOM_REASONS, MAX_FIELDS, MAX_RULE_CHARS, MAX_TAGS, MAX_TEST_QUESTIONS, MODE_LABELS, PRIORITY_DEFAULT, PRIORITY_LEVELS, QUEUE, SETTINGS_FIELDS, SETTINGS_VERSION, TRIGGERS, UPSET_DEFAULT, URGENT_DEFAULT, UTC_OFFSETS, WAITING_DEFAULT, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, normQuestions, upgradeSettings, withAiKey, withConfig } from "../config.js";
+import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, selectorError, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
 import { cleanTag, normTags, tagSlug } from "../tags.js";
 import { DEFAULT_RULES, MAX_EXAMPLES, MAX_RULES_CHARS, MAX_STYLE_CHARS, STYLE_KEY, cleanExample, cleanRules, getStyle, normStyle } from "../style.js";
@@ -57,7 +57,7 @@ export function settingsView(env) {
     settings[k] = k === "mode" ? currentMode(env) : k === "effort" ? effortLevel(env) : cfg(env, f.env);
     sources[k] = env.__saved?.[k] != null && env.__saved[k] !== "" ? "admin" : env.__orig?.[f.env] ? "cloudflare" : "default";
   }
-  return { settings, sources, escalation: env.__esc, followup: env.__fu, ai: env.__aiKey };
+  return { settings, sources, escalation: env.__esc, followup: env.__fu, testQuestions: env.__test, ai: env.__aiKey };
 }
 
 const syncView = (st) => ({
@@ -112,7 +112,7 @@ export async function apiState(env, url, who) {
       { label: "Crisp keys", ok: !!(env.CRISP_IDENTIFIER && env.CRISP_KEY), fix: "Add CRISP_IDENTIFIER and CRISP_KEY in Cloudflare" },
       { label: "Crisp webhook signature", ok: !!env.CRISP_HOOK_SECRET || cfg(env, "VERIFY_HOOKS") === "false", fix: "Add CRISP_HOOK_SECRET in Cloudflare" },
       { label: "OpenAI key", ok: !!env.OPENAI_API_KEY, detail: env.__aiKey?.from === "admin" ? `Saved in Settings → AI (${env.__aiKey.hint})` : "Set in Cloudflare (OPENAI_API_KEY)", fix: "Add a key in Settings → AI" },
-      { label: "Help center", ok: (meta.pages || 0) > 0, detail: meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles in use` : "Not loaded yet", fix: "Click Sync now on the Knowledge page. Also check the Cron trigger * * * * * is on in Cloudflare." },
+      { label: "Help center", ok: (meta.pages || 0) > 0, detail: meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles in use` : "Not loaded yet", fix: cfg(env, "HELP_CENTER_URL") ? "Click Sync now on the Knowledge page. Also check the Cron trigger * * * * * is on in Cloudflare." : "Add your help center link in Settings → Product, then click Sync now on the Knowledge page." },
     ],
     pending: log.items.filter((x) => x.gap && !x.st).length,
     recent: log.items.slice(-6).reverse(),
@@ -127,7 +127,15 @@ export async function apiState(env, url, who) {
       maxRulesChars: MAX_RULES_CHARS,
       maxExamples: MAX_EXAMPLES,
       triggers: Object.fromEntries(Object.entries(TRIGGERS).map(([k, v]) => [k, { label: v.label, hint: v.hint }])),
-      infoFields: Object.fromEntries(Object.entries(INFO_FIELDS).map(([k, v]) => [k, v.label])),
+      priorityLevels: PRIORITY_LEVELS,
+      // Chữ mặc định của các ô team sửa được (để nút "Restore default" điền lại)
+      defaults: { upset: UPSET_DEFAULT, waiting: WAITING_DEFAULT, priority: PRIORITY_DEFAULT, urgent: URGENT_DEFAULT, fallbackText: FOLLOWUP_DEFAULT.fallbackText },
+      utcOffsets: UTC_OFFSETS,
+      maxFields: MAX_FIELDS,
+      maxCustomReasons: MAX_CUSTOM_REASONS,
+      maxRuleChars: MAX_RULE_CHARS,
+      maxTestQuestions: MAX_TEST_QUESTIONS,
+      restoreSections: Object.fromEntries(Object.entries(RESTORE_SECTIONS).map(([k, v]) => [k, v.label])),
       modes: MODE_LABELS,
       maxTags: MAX_TAGS,
       utcOffset: Number(cfg(env, "UTC_OFFSET_HOURS")),
@@ -176,7 +184,8 @@ export async function apiTags(env, body, who) {
 }
 
 export async function apiSettings(env, body, who) {
-  const cur = (await getJSON(env, "cfg:settings")) || {};
+  // Bot chạy từ trước bản 2: nâng dữ liệu cũ lên (compat.js); lần lưu này ghi luôn dạng mới vào KV
+  const cur = upgradeSettings(await getJSON(env, "cfg:settings"), env) || {};
   const changed = [];
   for (const [k, raw] of Object.entries(body.settings || {})) {
     const f = SETTINGS_FIELDS[k];
@@ -193,24 +202,43 @@ export async function apiSettings(env, body, who) {
   for (const [part, norm, label] of [["escalation", normEscalation, "Escalation"], ["followup", normFollowup, "Feedback & follow-up"]]) {
     if (!body[part] || typeof body[part] !== "object") continue;
     const before = norm(cur[part]);
-    const next = norm({ ...before, ...body[part] });
+    const patch = { ...body[part] };
+    if (part === "escalation") {
+      // Ô luật để y như mặc định → lưu null, để bot tiếp tục theo mặc định
+      if (typeof patch.upset === "string" && patch.upset.trim() === UPSET_DEFAULT) patch.upset = null;
+      if (typeof patch.waiting === "string" && patch.waiting.trim() === WAITING_DEFAULT) patch.waiting = null;
+      for (const k of ["upset", "waiting"]) if (typeof patch[k] === "string" && patch[k].length > MAX_RULE_CHARS) bad(`That text can be up to ${MAX_RULE_CHARS} characters`);
+    }
+    const next = norm({ ...before, ...patch });
     if (JSON.stringify(next) !== JSON.stringify(before)) {
       cur[part] = next;
       changed.push(label);
     }
   }
-  // Đổi help center (link hoặc section): đọc sitemap ngay để báo lỗi trước khi lưu, rồi cho sync chạy lại từ đầu (cron đọc tiếp từng phần)
+  if (Array.isArray(body.testQuestions)) {
+    const next = normQuestions(body.testQuestions);
+    if (JSON.stringify(next) !== JSON.stringify(normQuestions(cur.testQuestions))) {
+      cur.testQuestions = next;
+      changed.push(`Test questions: ${next.length}`);
+    }
+  }
+  if (cur.helpSelector && cur.helpSelector !== cfg(env, "HELP_CENTER_SELECTOR")) {
+    const err = selectorError(cur.helpSelector);
+    if (err) bad(`Article content area: this selector can't be used (${err}). Use a simple one like .article-body or #content.`);
+  }
+  // Đổi help center (link, section, danh sách bài, vùng nội dung): đọc danh sách bài ngay để báo lỗi trước khi lưu, rồi cho sync chạy lại từ đầu (cron đọc tiếp từng phần)
   let helpJob = null;
   const nextEnv = applySettings(env, { ...cur, mode: cur.mode ?? env.__saved?.mode });
-  if (cfg(nextEnv, "HELP_CENTER_URL") !== cfg(env, "HELP_CENTER_URL") || cfg(nextEnv, "HELP_CENTER_SECTIONS") !== cfg(env, "HELP_CENTER_SECTIONS")) {
+  if (["HELP_CENTER_URL", "HELP_CENTER_SECTIONS", "HELP_CENTER_PAGES", "HELP_CENTER_SELECTOR"].some((k) => cfg(nextEnv, k) !== cfg(env, k))) {
     const kbCfg = (await getJSON(env, "cfg:kb")) || {};
     try {
       helpJob = await newSyncJob(nextEnv, kbCfg, who);
     } catch (e) {
-      bad(`Couldn't read the help center: ${e.message}. Check the link (its sitemap.xml must be reachable) and the sections.`);
+      bad(`Couldn't read the help center: ${e.message}`);
     }
   }
   if (changed.length) {
+    cur.v = SETTINGS_VERSION;
     await putJSON(env, "cfg:settings", cur);
     await logChange(env, who, `Settings: ${changed.join("; ")}`);
   }
@@ -396,6 +424,13 @@ export async function apiKb(env, body, who) {
     const fresh = finished ? (await getJSON(env, "kb:meta")) || meta : meta;
     return { kb: kbView(env, fresh, kbCfg, st) };
   }
+  if (body.op === "rereadImages") {
+    // Ảnh đổi nội dung mà giữ nguyên link: đổi mã để lần sync tới AI đọc lại mọi ảnh
+    kbCfg.imgRev = (Number(kbCfg.imgRev) || 0) + 1;
+    await putJSON(env, "cfg:kb", kbCfg);
+    await logChange(env, who, "Asked the bot to read the help center images again");
+    return { kb: kbView(env, meta, kbCfg, await getJSON(env, SYNC)) };
+  }
   if (body.op === "autoSync") {
     if (!Object.hasOwn(SYNC_DAYS, body.value)) bad("Choose off, every day or every week");
     kbCfg.autoSync = body.value;
@@ -471,7 +506,7 @@ export async function apiTest(env, body) {
     r = await generateReply(env, msgs, { handedOff: !!body.handedOff, customer: cleanCustomer(body.customer) });
   } catch (e) {
     // AI hỏng: cho người thử thấy đúng câu khách thật sẽ nhận, kèm lý do
-    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: e?.message || String(e) };
+    r = { reply: env.__fu.fallbackText, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: e?.message || String(e) };
   }
   const fu = env.__fu;
   const feedback = r.action === "answer" && !body.handedOff && !r.urgent && !r.knowledge_gap && fu.feedback ? { text: fu.feedbackText, yes: fu.yesLabel, no: fu.noLabel, thanks: fu.thanksText } : null;
@@ -552,38 +587,87 @@ export async function apiSuggest(env, body) {
   return { groups };
 }
 
+// File sao lưu: tên "app" cũ vẫn nhận được khi khôi phục
+const BACKUP_APP = "support-bot";
+const BACKUP_APPS = [BACKUP_APP, "transtore-bot"];
+
 export async function apiExport(env) {
   const [settings, guidance, snippets, kb, tags, style] = await Promise.all(["cfg:settings", "cfg:guidance", "cfg:snippets", "cfg:kb", "cfg:tags", STYLE_KEY].map((k) => getJSON(env, k)));
-  const data = { app: "transtore-bot", version: 3, exportedAt: new Date().toISOString(), settings: settings || {}, guidance: guidance || [], snippets: snippets || [], tags: tags || null, style: normStyle(style), kb: { excluded: kb?.excluded || [], web: kb?.web || [], autoSync: autoSyncOf(kb) } };
+  const data = { app: BACKUP_APP, version: 4, exportedAt: new Date().toISOString(), settings: upgradeSettings(settings, env) || {}, guidance: guidance || [], snippets: snippets || [], tags: tags || null, style: normStyle(style), kb: { excluded: kb?.excluded || [], web: kb?.web || [], autoSync: autoSyncOf(kb) } };
   return new Response(JSON.stringify(data, null, 2), {
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": `attachment; filename="bot-backup-${localNow(env).month}.json"` },
   });
 }
 
+/* Khôi phục theo từng phần, để đem cách làm việc của bot này sang bot của app khác mà không chép kiến thức của app cũ:
+   product    = sản phẩm, help center, email hỗ trợ, danh sách trang web và bài đang tắt
+   bot        = tên bot, ngôn ngữ, chế độ, giờ làm việc, múi giờ, model AI, câu hỏi thử
+   escalation = Escalation + Feedback & follow-up
+   guidance, style, snippets, tags = đúng tên trang */
+export const RESTORE_SECTIONS = {
+  product: { label: "Product and knowledge sources", fields: ["product", "productDesc", "helpUrl", "helpSections", "helpPages", "helpSelector", "supportEmail"] },
+  bot: { label: "Bot settings", fields: ["botName", "language", "mode", "businessHours", "utcOffset", "model", "effort"] },
+  escalation: { label: "Escalation and follow-up", fields: [] },
+  guidance: { label: "Guidance", fields: [] },
+  style: { label: "Writing style", fields: [] },
+  snippets: { label: "Snippets", fields: [] },
+  tags: { label: "Tags", fields: [] },
+};
+
 export async function apiImport(env, body, who) {
   const d = body.data;
-  if (!d || d.app !== "transtore-bot") bad("This file isn't a backup from this bot's admin");
-  const settings = {};
-  for (const [k, f] of Object.entries(SETTINGS_FIELDS)) {
-    if (d.settings?.[k] == null) continue;
-    const v = clip(d.settings[k], f.max || 40, !!f.multiline);
-    if ((!f.values || f.values.includes(v)) && (!f.check || f.check(v)) && (!f.required || v)) settings[k] = v;
+  if (!d || !BACKUP_APPS.includes(d.app)) bad("This file isn't a backup from this bot's admin");
+  const all = Object.keys(RESTORE_SECTIONS);
+  const want = Array.isArray(body.sections) ? all.filter((k) => body.sections.includes(k)) : all;
+  if (!want.length) bad("Choose at least one part to restore");
+  const has = (k) => want.includes(k);
+  const src = upgradeSettings(d.settings && typeof d.settings === "object" ? d.settings : {}, {}); // file cũ → dạng mới
+  const settings = { ...(upgradeSettings(await getJSON(env, "cfg:settings"), env) || {}), v: SETTINGS_VERSION };
+  for (const part of ["product", "bot"]) {
+    if (!has(part)) continue;
+    for (const k of RESTORE_SECTIONS[part].fields) {
+      const f = SETTINGS_FIELDS[k];
+      delete settings[k];
+      if (src[k] == null) continue;
+      const v = clip(src[k], f.max || 40, !!f.multiline);
+      if ((!f.values || f.values.includes(v)) && (!f.check || f.check(v)) && (!f.required || v)) settings[k] = v;
+    }
   }
-  settings.escalation = normEscalation(d.settings?.escalation);
-  settings.followup = normFollowup(d.settings?.followup);
-  const guidance = (Array.isArray(d.guidance) ? d.guidance : []).slice(0, 60).map((g) => cleanGuidance(g, g?.by || who)).filter((g) => g.text);
-  const snippets = (Array.isArray(d.snippets) ? d.snippets : []).slice(0, 300).map((s) => cleanSnippet(s, s?.by || who)).filter((s) => s.q && s.a);
-  const kb = {
-    excluded: (Array.isArray(d.kb?.excluded) ? d.kb.excluded : []).filter((x) => typeof x === "string").slice(0, 1000),
-    web: (Array.isArray(d.kb?.web) ? d.kb.web : []).map(normWebUrl).filter(Boolean).slice(0, 20),
-    autoSync: autoSyncOf(d.kb),
-  };
-  const writes = [putJSON(env, "cfg:settings", settings), putJSON(env, "cfg:guidance", guidance), putJSON(env, "cfg:snippets", snippets), putJSON(env, "cfg:kb", kb)];
-  if (d.tags && typeof d.tags === "object") writes.push(putJSON(env, "cfg:tags", normTags(d.tags, env.__orig)));
-  if (d.style && typeof d.style === "object") writes.push(putJSON(env, STYLE_KEY, normStyle(d.style))); // bản sao lưu cũ (trước khi có Writing style) thì giữ nguyên văn phong hiện tại
+  if (has("bot")) settings.testQuestions = normQuestions(src.testQuestions);
+  if (has("escalation")) {
+    settings.escalation = normEscalation(src.escalation);
+    settings.followup = normFollowup(src.followup);
+  }
+  const writes = [putJSON(env, "cfg:settings", settings)];
+  const done = [];
+  let kb = null;
+  if (has("product")) {
+    kb = {
+      excluded: (Array.isArray(d.kb?.excluded) ? d.kb.excluded : []).filter((x) => typeof x === "string").slice(0, 1000),
+      web: (Array.isArray(d.kb?.web) ? d.kb.web : []).map(normWebUrl).filter(Boolean).slice(0, 20),
+      autoSync: autoSyncOf(d.kb),
+      imgRev: ((await getJSON(env, "cfg:kb")) || {}).imgRev || 0,
+    };
+    writes.push(putJSON(env, "cfg:kb", kb));
+  }
+  if (has("guidance")) {
+    const guidance = (Array.isArray(d.guidance) ? d.guidance : []).slice(0, 60).map((g) => cleanGuidance(g, g?.by || who)).filter((g) => g.text);
+    writes.push(putJSON(env, "cfg:guidance", guidance));
+    done.push(`${guidance.length} guidance`);
+  }
+  if (has("snippets")) {
+    const snippets = (Array.isArray(d.snippets) ? d.snippets : []).slice(0, 300).map((s) => cleanSnippet(s, s?.by || who)).filter((s) => s.q && s.a);
+    writes.push(putJSON(env, "cfg:snippets", snippets));
+    done.push(`${snippets.length} snippets`);
+  }
+  if (has("tags") && d.tags && typeof d.tags === "object") writes.push(putJSON(env, "cfg:tags", normTags(d.tags, env.__orig)));
+  // File sao lưu cũ (trước khi có Writing style) không có phần này: giữ nguyên văn phong hiện tại
+  if (has("style") && d.style && typeof d.style === "object") writes.push(putJSON(env, STYLE_KEY, normStyle(d.style)));
   await Promise.all(writes);
-  await logChange(env, who, `Restored from backup: ${guidance.length} guidance, ${snippets.length} snippets`);
-  await rebuildKnowledge(env, { kbCfg: kb });
-  await rescheduleSync(env, kb.autoSync);
-  return { ok: true };
+  await logChange(env, who, `Restored from backup: ${want.map((k) => RESTORE_SECTIONS[k].label).join(", ")}${done.length ? ` (${done.join(", ")})` : ""}`);
+  if (kb) {
+    await rebuildKnowledge(env, { kbCfg: kb });
+    await rescheduleSync(env, kb.autoSync);
+  }
+  return { ok: true, restored: want };
 }

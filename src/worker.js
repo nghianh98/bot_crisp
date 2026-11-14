@@ -1,6 +1,6 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 /**
- * Support Bot — AI chatbot hỗ trợ khách trên Crisp (hiện dùng cho Transtore; sản phẩm, help center điền trên /admin → Settings).
+ * Support Bot — AI chatbot hỗ trợ khách trên Crisp. Sản phẩm, help center và mọi cách ứng xử điền trên /admin, không nằm trong code.
  * Chạy trên Cloudflare Workers, dùng OpenAI. Kiến thức: help center + trang website + snippet do team viết.
  *
  * Trang quản trị: /admin (đăng nhập bằng ADMIN_KEY)

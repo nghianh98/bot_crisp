@@ -13,7 +13,7 @@ const TEMPLATES = {
   clarify: [
     ["Ask when the question is vague", "If the question is vague (for example 'it doesn't work'), ask one short question to understand what they mean before answering."],
     ["Ask for their plan", "When the answer depends on the customer's plan, ask which plan they are on."],
-    ["Ask for the theme on display issues", "For display problems on the storefront, ask which theme they use before suggesting steps."],
+    ["Ask where a display problem shows", "For display problems, ask which page and which device or browser before suggesting steps."],
   ],
   content: [
     ["Don't compare competitors", "Do not compare the product with other apps unless the customer asks."],
@@ -25,7 +25,7 @@ const TEMPLATES = {
     ["Offer email outside hours", "When handing off outside working hours, also offer the support email."],
   ],
   other: [
-    ["Refunds", "If the customer asks for a refund, do not promise anything. Collect the store URL and the reason, then hand off."],
+    ["Refunds", "If the customer asks for a refund, do not promise anything. Collect the account details and the reason, then hand off."],
     ["Feature requests", "If the customer asks for a feature we do not have, thank them and say the request is passed to the product team."],
   ],
 };
@@ -34,8 +34,8 @@ const FIXED = [
   "Answers only from snippets, the help center and website pages; never invents features, prices or links.",
   "Replies in the language chosen in Settings.",
   "Plain text only: the chat doesn't show markdown. Length, format and voice follow your rules on the Writing style page.",
-  "Never asks for passwords, staff logins, API keys or card numbers (the collaborator request code is not a password: turn it on in Escalation).",
-  "Angry customers: never goes silent or argues; apologises once and says when the team will reply.",
+  "Never asks for passwords, staff logins, API keys or card numbers.",
+  "Says honestly that it is an AI assistant when a customer asks.",
 ];
 
 const langName = () => (/^auto$/i.test(store.S.settings.language) ? "the customer's language" : store.S.settings.language);
@@ -55,7 +55,7 @@ ${Object.entries(cats)
 <p class="hint">${esc(c.hint)}</p><div class="rows">${items.length ? items.map(row).join("") : `<div class="empty">No guidance yet. <button type="button" class="lk" data-act="gNew" data-cat="${k}">Start from a template</button></div>`}</div></section>`;
   })
   .join("")}
-<section class="sec"><h2>Fixed rules</h2><p class="hint">The bot always keeps these rules; guidance above can't override them. Changing them needs a code change.</p>
+<section class="sec"><h2>Fixed rules</h2><p class="hint">The bot always keeps these few rules; guidance above can't override them. Everything else about how it talks and when it hands off is yours to edit: Writing style, Escalation, Feedback &amp; follow-up.</p>
 <div class="rows">${FIXED.map((t) => `<div class="row"><span class="st ok" aria-hidden="true">✓</span><div class="grow">${esc(t)}</div></div>`).join("")}</div></section>`);
 };
 

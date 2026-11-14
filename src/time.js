@@ -32,6 +32,15 @@ export function parseBusinessHours(s) {
   return { days, open, close };
 }
 
+// "GMT+7", "GMT-5", "GMT+5:30", "GMT"
+export function tzLabel(offset) {
+  const h = Number(offset) || 0;
+  if (!h) return "GMT";
+  const abs = Math.abs(h);
+  const min = Math.round((abs % 1) * 60);
+  return `GMT${h < 0 ? "-" : "+"}${Math.floor(abs)}${min ? `:${String(min).padStart(2, "0")}` : ""}`;
+}
+
 // Câu mô tả cho AI: team đang trong giờ làm hay bao lâu nữa quay lại
 export function teamAvailabilityNote(env) {
   const bh = parseBusinessHours(cfg(env, "BUSINESS_HOURS"));
@@ -39,7 +48,7 @@ export function teamAvailabilityNote(env) {
   const now = localNow(env);
   const inHours = bh.days.has(now.weekday) && now.minutes >= bh.open && now.minutes < bh.close;
   const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
-  const tz = `GMT+${cfg(env, "UTC_OFFSET_HOURS")}`;
+  const tz = tzLabel(cfg(env, "UTC_OFFSET_HOURS"));
   if (inHours) return `Team support works ${cfg(env, "BUSINESS_HOURS")} (${tz}); it is within working hours now, so a teammate usually replies within a few hours.`;
   let wait = 0;
   let when = "";

@@ -1,16 +1,11 @@
 // "Test the bot" panel: multi-turn chat using the saved knowledge, with why the bot answered as it did.
-import { $, A, api, chipsFor, esc, store } from "./core.js";
+import { $, A, api, busy, chipsFor, closeModal, esc, modal, store, toast } from "./core.js";
 import { openImprove, srcLinks } from "./components.js";
 
 const P = { msgs: [], busy: false };
 
-const STARTERS = [
-  "How do I add a new language?",
-  "Why does my store show the wrong currency on mobile?",
-  "I was charged twice this month, I want a refund",
-  "Your app broke my store!! Fix it now",
-  "Can I talk to a real person?",
-];
+// Questions shown as shortcuts when the panel is empty: saved by the team (Edit questions), not fixed in code
+const starters = () => store.S?.testQuestions || [];
 
 const initial = () => (store.S?.settings.botName || "T").trim().charAt(0).toUpperCase();
 
@@ -50,7 +45,9 @@ ${r.teamNote ? `<details class="tnote" open><summary>Note for the team (only the
 export function pvRender() {
   const log = $("#pvLog");
   if (!P.msgs.length) {
-    log.innerHTML = `<div class="starters"><p>Type a question customers often ask, or try one:</p>${STARTERS.map((s) => `<button type="button" data-act="pvStarter">${esc(s)}</button>`).join("")}</div>`;
+    const qs = starters();
+    log.innerHTML = `<div class="starters"><p>${qs.length ? "Type a question customers often ask, or try one:" : "Type a question the way a customer would. Save the ones you ask often to try them again in one click."}</p>${qs.map((s) => `<button type="button" data-act="pvStarter">${esc(s)}</button>`).join("")}
+<p><button type="button" class="lk" data-act="pvQuestions">${qs.length ? "Edit questions" : "Add test questions"}</button></p></div>`;
     return;
   }
   log.innerHTML =
@@ -143,3 +140,23 @@ export function initPreview() {
   });
   pvRender();
 }
+
+// The team's saved test questions (one per line)
+A.pvQuestions = () => {
+  const max = store.S.meta.maxTestQuestions;
+  modal(
+    "Test questions",
+    `<p class="hint" style="margin:0 0 10px">Questions your customers really ask, one per line (up to ${max}). They appear as shortcuts in this panel so you can re-check the bot after every change.</p>
+<textarea class="in" id="pvQs" rows="10" maxlength="3000" placeholder="How do I get started?&#10;I was charged twice, I want a refund&#10;Can I talk to a person?">${esc(starters().join("\n"))}</textarea>`,
+    `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="pvQuestionsSave">Save questions</button>`,
+    { onOpen: (d) => $("#pvQs", d).focus() }
+  );
+};
+A.pvQuestionsSave = (el) =>
+  busy(el, async () => {
+    const testQuestions = $("#pvQs").value.split("\n").map((l) => l.trim()).filter(Boolean);
+    Object.assign(store.S, await api("/api/settings", { testQuestions }));
+    closeModal();
+    if (!P.msgs.length) pvRender();
+    toast("Test questions saved");
+  });

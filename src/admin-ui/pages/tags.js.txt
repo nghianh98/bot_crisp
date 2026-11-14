@@ -27,7 +27,7 @@ R.tags = async () => {
 </div></div>
 <div class="fr"><label for="tp">Prefix<small>Goes before the tag key in Crisp</small></label><div><input class="in" id="tp" value="${esc(T.prefix)}" maxlength="20" style="max-width:220px"><p class="meta" id="tpx">Example: ${esc(T.prefix)}setup</p></div></div>
 <div class="fr"><div class="lb">Status segments<small>The bot adds these to conversations</small></div><div>
-${segIn("sgh", "handoff", "Bot handed off to the team")}${segIn("sgu", "urgent", "Angry customer or store badly broken")}${segIn("sg1", "p1", "Priority P1: store or checkout down, data or security")}${segIn("sg2", "p2", "Priority P2: main feature broken, no workaround")}${segIn("sgp", "paused", "Team joined, bot stays quiet")}</div></div>
+${segIn("sgh", "handoff", "Bot handed off to the team")}${segIn("sgu", "urgent", "Urgent: angry customer or a serious problem")}${segIn("sg1", "p1", "Priority P1 (critical)")}${segIn("sg2", "p2", "Priority P2 (high)")}${segIn("sgp", "paused", "Team joined, bot stays quiet")}</div></div>
 </div>
 <div class="savebar"><p class="meta">If you change the prefix or a segment name, older conversations keep the old name in Crisp.</p><button type="button" class="btn pri" data-act="tagSettingsSave">Save tagging settings</button></div></section>`);
   $("#tp").oninput = (e) => ($("#tpx").textContent = `Example: ${e.target.value.trim().toLowerCase()}setup`);

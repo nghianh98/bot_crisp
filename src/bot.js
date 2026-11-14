@@ -1,7 +1,7 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // Luồng trả lời khách: nhận sự kiện từ Crisp, quyết định trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến.
 import { classify, generateReply } from "./ai.js";
-import { AI_FALLBACK_REPLY, FEEDBACK_ID, cfg, currentMode } from "./config.js";
+import { FEEDBACK_ID, cfg, currentMode } from "./config.js";
 import { compose, crisp, getCustomer, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
 import { scheduleAfterReply, scheduleFollowup, unscheduleFollowup } from "./followup.js";
 import { handoffNote } from "./handoff.js";
@@ -95,7 +95,8 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   // Đã chuyển người nhưng khách im lâu rồi mới nhắn lại ("hi there" vài tiếng sau): coi là cuộc chat mới.
   // Case cũ vẫn nằm trong inbox của team (segment giữ nguyên); AI chỉ nhắc tới nó khi khách hỏi.
   let earlierCase = false;
-  if (state === "handoff" && pauseHours(messages) >= Number(cfg(env, "HANDOFF_RESET_HOURS"))) {
+  const resetHours = env.__esc.resetHours; // 0 = không bao giờ coi là chat mới
+  if (state === "handoff" && resetHours > 0 && pauseHours(messages) >= resetHours) {
     await clearState(env, sessionId);
     state = null;
     earlierCase = true;
@@ -132,7 +133,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
       if (state === "failed") await setState(env, sessionId, "handoff");
       return compose(env, websiteId, sessionId, false);
     }
-    r = { reply: AI_FALLBACK_REPLY, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: clip(e?.message || String(e), 200) };
+    r = { reply: env.__fu.fallbackText, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: clip(e?.message || String(e), 200) };
   }
   await compose(env, websiteId, sessionId, false);
   if (handedOff && r.action === "ask_info") r.action = "answer";

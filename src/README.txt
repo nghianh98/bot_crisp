@@ -1,4 +1,4 @@
-TRANSTORE BOT: ĐỌC TRƯỚC KHI SỬA CODE
+SUPPORT BOT: ĐỌC TRƯỚC KHI SỬA CODE
 
 !! Code gốc giờ nằm ở project local (bot_scrisp). Đừng sửa thẳng trên dashboard Cloudflare nữa:
 !! lần deploy sau từ local sẽ ghi đè mọi chỗ sửa trên dashboard. Sửa ở local rồi deploy lên.
@@ -19,7 +19,8 @@ training.js         Snippet và hướng dẫn do team viết
 style.js            Văn phong: độ dài câu trả lời, câu tự giới thiệu, câu trả lời mẫu của team (trang Writing style)
 tags.js             Tag vấn đề, tiền tố, segment trạng thái
 stats.js            Thống kê tháng, nhật ký trả lời, nhật ký thay đổi
-config.js           Giá trị mặc định và cài đặt
+config.js           Giá trị mặc định (trung tính, không riêng app nào) và cài đặt
+compat.js           Tương thích dữ liệu cũ: bot chạy trước bản 2 của cài đặt giữ nguyên nội dung cũ; file sao lưu cũ
 crisp.js            Gọi API Crisp
 state.js            Trạng thái từng hội thoại
 time.js, util.js    Giờ làm việc, hàm dùng chung
@@ -52,4 +53,4 @@ LƯU Ý
 
 - Thêm 1 file giao diện mới: làm theo ghi chú đầu file admin/ui.js.
 - Khoá bí mật (Crisp, OpenAI, ADMIN_KEY) không nằm trong code. Chúng ở Settings → Variables and Secrets.
-- Deploy nhầm: ra trang transtore-bot, mở tab Deployments, bấm dấu ... ở bản trước đó để quay lại bản đó.
+- Deploy nhầm: ra trang của worker trên Cloudflare, mở tab Deployments, bấm dấu ... ở bản trước đó để quay lại bản đó.

@@ -31,7 +31,7 @@ R.followup = () => {
 <div class="fr"><div class="lb">After an answer<small>Only nudges once</small></div><div>${sw(F.nudge, "fuFlip", `data-k="nudge"`, "Nudge after an answer")}
 <div class="times">Nudge after <select class="in" id="nm" aria-label="Minutes">${opt(MIN, F.nudgeMin, "min")}</select></div>
 <label class="fl" for="nt">Nudge message</label>${txt("nt", F.nudgeText, 300)}</div></div>
-<div class="fr"><div class="lb">While the bot waits for details<small>For example, it asked for the store URL and the customer hasn't sent it</small></div><div>${sw(F.infoNudge, "fuFlip", `data-k="infoNudge"`, "Nudge while waiting for details")}
+<div class="fr"><div class="lb">While the bot waits for details<small>For example, it asked for a screenshot and the customer hasn't sent it</small></div><div>${sw(F.infoNudge, "fuFlip", `data-k="infoNudge"`, "Nudge while waiting for details")}
 <div class="times">Nudge after <select class="in" id="im" aria-label="Minutes">${opt(MIN, F.infoNudgeMin, "min")}</select></div>
 <label class="fl" for="it">Nudge message</label>${txt("it", F.infoNudgeText, 300)}</div></div>
 </div></section>
@@ -41,9 +41,15 @@ R.followup = () => {
 <div class="fr"><div class="lb">Resolve in Crisp automatically<small>Needs a Production token with write access to website:conversation:states</small></div><div>${sw(F.autoResolve, "fuFlip", `data-k="autoResolve"`, "Resolve automatically")}
 <p class="meta">If the token only has read access, the bot skips this step and everything else still runs.</p></div></div>
 </div></section>
+<section class="sec"><h2>When the AI can't answer</h2><div class="form">
+<div class="fr"><label for="fb">Backup message<small>Sent when the AI fails or is too slow, even after a retry. The conversation is handed to the team. <button type="button" class="lk" data-act="fuDefault">Restore default</button></small></label>${txt("fb", F.fallbackText, 300)}</div>
+</div></section>
 <div class="savebar"><p class="meta">Changes reach real customers within about a minute.</p><button type="button" class="btn pri" data-act="fuSave">Save</button></div>`);
 };
 
+A.fuDefault = () => {
+  $("#fb").value = store.S.meta.defaults.fallbackText;
+};
 A.fuFlip = (el) => el.setAttribute("aria-checked", String(el.getAttribute("aria-checked") !== "true"));
 
 A.fuSave = (el) =>
@@ -65,6 +71,7 @@ A.fuSave = (el) =>
       close: on("close"),
       closeHours: +$("#ch").value,
       autoResolve: on("autoResolve"),
+      fallbackText: $("#fb").value,
     };
     const r = await api("/api/settings", { followup });
     Object.assign(S, r);

@@ -1,0 +1,37 @@
+{
+  // Mẫu config để chạy bot này cho MỘT APP KHÁC (mỗi app = 1 worker + 1 kho dữ liệu KV riêng).
+  // Cách dùng: xem README.md → "Dùng bot cho app khác".
+  //   1. Chép file này thành wrangler.<tên-app>.jsonc
+  //   2. Sửa "name" và "id" của KV bên dưới
+  //   3. npx wrangler deploy -c wrangler.<tên-app>.jsonc
+  // Không có nội dung riêng của app nào trong code: tên sản phẩm, help center, giờ làm việc, múi giờ,
+  // cách trả lời… đều điền trên trang /admin của worker mới.
+  "name": "myapp-support-bot",
+  "main": "src/worker.js",
+  "no_bundle": true,
+  "find_additional_modules": true,
+  "base_dir": "src",
+  "rules": [
+    { "type": "ESModule", "globs": ["**/*.js"] }
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "compatibility_date": "2026-11-11",
+  "triggers": {
+    "crons": [
+      "* * * * *" // mỗi phút: sync kiến thức, nhắc khách, câu trả lời hẹn
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "persist": true, "invocation_logs": true }
+  },
+  "keep_vars": true,
+  "kv_namespaces": [
+    {
+      "id": "DÁN_ID_KV_CỦA_APP_MỚI_VÀO_ĐÂY", // lấy từ lệnh: npx wrangler kv namespace create <tên-app>-bot-kb
+      "binding": "KB"
+    }
+  ]
+}

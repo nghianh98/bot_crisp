@@ -11,7 +11,7 @@ Muốn thử code trước khi đưa lên: chạy ở máy (`npm run dev`) và d
 
 Webhook Crisp gửi về `/crisp/hooks` của bot thật.
 
-Sản phẩm bot hỗ trợ (tên, mô tả, link help center, section) điền trong admin → Settings → Product, không nằm trong code. Dùng cho app khác: tạo worker + KV mới, điền lại các ô đó.
+Code không chứa nội dung riêng của app nào: sản phẩm, help center, múi giờ, cách trả lời, khi nào chuyển người… đều điền trên admin. Muốn chạy bot cho app khác: xem [Dùng bot cho app khác](#dùng-bot-cho-app-khác).
 
 Sơ đồ từng file trong code: xem [src/README.txt](src/README.txt).
 
@@ -92,3 +92,43 @@ Rồi vào admin → Settings → AI nhập khoá OpenAI và chọn model, và �
 ```bash
 npm run logs
 ```
+
+## Dùng bot cho app khác
+
+Mỗi app là 1 worker riêng + 1 kho dữ liệu (KV) riêng + 1 plugin Crisp riêng. Code dùng chung, không phải sửa dòng nào.
+Trong các lệnh dưới, thay `myapp` bằng tên app.
+
+**1. Tạo kho dữ liệu.** Lệnh in ra một `id`, chép lại.
+
+```bash
+npx wrangler kv namespace create myapp-bot-kb
+```
+
+**2. Tạo file config.** Chép [wrangler.app.example.jsonc](wrangler.app.example.jsonc) thành `wrangler.myapp.jsonc`, sửa `name` (tên worker) và dán `id` vừa có vào `kv_namespaces`.
+
+**3. Đưa code lên.**
+
+```bash
+npx wrangler deploy -c wrangler.myapp.jsonc
+```
+
+**4. Đặt khoá (dạng Secret).** Chạy lần lượt cho `ADMIN_KEY` (mật khẩu admin tự đặt), `CRISP_IDENTIFIER`, `CRISP_KEY`, `CRISP_HOOK_SECRET`:
+
+```bash
+npx wrangler secret put ADMIN_KEY -c wrangler.myapp.jsonc
+```
+
+**5. Plugin Crisp.** Trong Crisp Marketplace tạo plugin mới cho app này, cài vào website của app.
+- Tokens (Production) → `CRISP_IDENTIFIER`, `CRISP_KEY`.
+- Settings → Events → Production Web Hook: link `https://<worker>/crisp/hooks` (có sẵn để copy trong admin → Settings → Crisp connection), chọn 3 sự kiện `message:send`, `message:received`, `session:set_state`. Signing secret của hook này → `CRISP_HOOK_SECRET`.
+
+**6. Điền admin** tại `https://<worker>/admin`:
+- Settings: tên sản phẩm và mô tả, link help center, múi giờ và giờ làm việc, email hỗ trợ, khoá OpenAI và model.
+- Knowledge → Sync now. Help center không có sitemap thì dán link bài vào Settings → Help center pages.
+- Escalation: thông tin cần hỏi khách, định nghĩa P1–P4, lý do chuyển người riêng của app.
+
+**7. Đem cách làm việc từ bot cũ sang (tuỳ chọn).** Ở bot cũ: Settings → Download backup. Ở bot mới: Settings → Restore from file, bỏ tick **Product and knowledge sources** và **Snippets** để chỉ lấy guidance, văn phong, escalation.
+
+**8. Thử rồi bật.** Hỏi vài câu trong Test the bot, sau đó chọn Bot mode.
+
+Cập nhật code cho app đó về sau: chạy lại lệnh ở bước 3. `npm run deploy` (không có `-c`) chỉ đưa lên bot trong [wrangler.jsonc](wrangler.jsonc).

@@ -1,5 +1,5 @@
 // Settings: bot name, language, mode, working hours, email, AI model, connections, backup.
-import { $, $$, A, api, busy, confirmBox, esc, fmtTime, guard, header, pad, R, setMain, store, toast } from "../core.js";
+import { $, $$, A, api, busy, closeModal, confirmBox, esc, fmtTime, guard, header, modal, pad, R, setMain, store, toast, tzLabel } from "../core.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TIMES = Array.from({ length: 49 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`);
@@ -54,12 +54,15 @@ ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<o
 </div></section>
 <section class="sec"><h2>Product</h2><div class="form">
 <div class="fr"><label for="pn">Product name<small>The app or service the bot supports</small>${src("product")}</label><input class="in" id="pn" value="${esc(s.product === "our product" ? "" : s.product)}" maxlength="60" placeholder="My App"></div>
-<div class="fr"><label for="pd">About the product<small>What it does and who the customers are, plus anything the bot must always know. The bot reads this before every reply.</small>${src("productDesc")}</label><textarea class="in" id="pd" rows="4" maxlength="1000" placeholder="My App is a Shopify app that … Customers are Shopify merchants.">${esc(s.productDesc)}</textarea></div>
-<div class="fr"><label for="hu">Help center link<small>The bot reads every article listed in its sitemap.xml. Leave empty if you don't have one yet.</small>${src("helpUrl")}</label><input class="in" id="hu" type="url" value="${esc(s.helpUrl)}" maxlength="200" placeholder="https://help.example.com"></div>
+<div class="fr"><label for="pd">About the product<small>What it does and who the customers are, plus anything the bot must always know. The bot reads this before every reply.</small>${src("productDesc")}</label><textarea class="in" id="pd" rows="4" maxlength="1000" placeholder="My App helps … Customers are …">${esc(s.productDesc)}</textarea></div>
+<div class="fr"><label for="hu">Help center link<small>The bot reads every article listed in the site's sitemap (found automatically). Leave empty if you don't have a help center yet.</small>${src("helpUrl")}</label><input class="in" id="hu" type="url" value="${esc(s.helpUrl)}" maxlength="200" placeholder="https://help.example.com"></div>
 <div class="fr"><label for="hs">Help center sections<small>Only read articles under these paths, separated by commas (for example docs,faq). Leave empty to read the whole site.</small>${src("helpSections")}</label><input class="in" id="hs" value="${esc(s.helpSections)}" maxlength="200" placeholder="docs,faq"></div>
+<div class="fr"><label for="hp">Help center pages<small>Optional. One article link per line. Use it when the help center has no sitemap, or to add articles the sitemap misses.</small>${src("helpPages")}</label><textarea class="in" id="hp" rows="3" maxlength="40000" spellcheck="false" placeholder="https://help.example.com/articles/getting-started">${esc(s.helpPages)}</textarea></div>
+<div class="fr"><label for="hc">Article content area<small>Advanced, optional. The bot finds the article text by itself on most help centers. If it picks up menus or misses text, enter the CSS selector of the article body, for example .article-body.</small>${src("helpSelector")}</label><input class="in" id="hc" value="${esc(s.helpSelector)}" maxlength="120" spellcheck="false" placeholder=".article-body"></div>
 </div></section>
 <section class="sec"><h2>Support team</h2><div class="form">
-<div class="fr"><div class="lb">Working hours<small>Vietnam time (GMT+${S.meta.utcOffset}). Outside these hours the bot tells customers when the team is back.</small>${src("businessHours")}</div><div>
+<div class="fr"><label for="tz">Time zone<small>Your team's time zone. Working hours, reports and "the team is back at…" use it.</small>${src("utcOffset")}</label><select class="in" id="tz" style="width:auto">${S.meta.utcOffsets.map((o) => `<option value="${o}" ${String(s.utcOffset) === o ? "selected" : ""}>${tzLabel(o)}</option>`).join("")}</select></div>
+<div class="fr"><div class="lb">Working hours<small>In your team's time zone. Outside these hours the bot tells customers when the team is back.</small>${src("businessHours")}</div><div>
 <div class="days" role="group" aria-label="Working days">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${bh.days.has(i) ? "checked" : ""}><span>${d}</span></label>`).join("")}</div>
 <div class="times">From ${sel("bo", bh.open)} to ${sel("bc", bh.close)}</div>
 <p class="meta" id="bhx"></p></div></div>
@@ -80,7 +83,7 @@ ${!["English", "auto"].includes(s.language) && !/^auto$/i.test(s.language) ? `<o
     .map((h) => `<div class="row"><span class="st ${h.ok ? "ok" : "bad"}" aria-hidden="true">${h.ok ? "✓" : "!"}</span><div class="grow"><p class="t">${esc(h.label)}</p><p class="sub">${esc(h.ok ? h.detail || "Set" : h.fix)}</p></div></div>`)
     .join("")}</div></div>
 </div></section>
-<section class="sec"><h2>Backup</h2><div class="form"><div class="fr"><div class="lb">All bot settings<small>Snippets, guidance, writing style, tags, settings and the list of articles that are off</small></div>
+<section class="sec"><h2>Backup</h2><div class="form"><div class="fr"><div class="lb">All bot settings<small>Snippets, guidance, writing style, escalation, tags, settings and the list of articles that are off. When restoring you choose which parts to bring back, so one bot's setup can start another product's bot.</small></div>
 <div class="toolbar" style="margin:0"><a class="btn" href="/api/export" download>Download backup</a><button type="button" class="btn" data-act="importPick">Restore from file</button><input type="file" id="impf" accept="application/json,.json" hidden></div></div></div></section>`);
 
   const showBH = () => {
@@ -178,11 +181,14 @@ A.setSave = (el) =>
       language: $("#lg").value,
       mode: document.querySelector('input[name="mode"]:checked')?.value,
       businessHours: bh,
+      utcOffset: $("#tz").value,
       supportEmail: $("#em").value.trim(),
       product: $("#pn").value.trim(),
       productDesc: $("#pd").value.trim(),
       helpUrl: $("#hu").value.trim().replace(/\/+$/, ""),
       helpSections: $("#hs").value.trim(),
+      helpPages: $("#hp").value.split("\n").map((l) => l.trim()).filter(Boolean).join("\n"),
+      helpSelector: $("#hc").value.trim(),
       model: $("#md").value.trim(),
       effort: $("#ef").value,
     };
@@ -214,15 +220,30 @@ async function importFile(file) {
     return;
   }
   const when = data.exportedAt ? fmtTime(Date.parse(data.exportedAt)) : "an unknown date";
-  if (!(await confirmBox("Restore settings?", `All current snippets, guidance, writing style, tags and settings will be replaced with the backup from ${when}. Download a backup of the current setup first.`, "Restore", true))) return;
-  try {
-    await api("/api/import", { data });
+  pending = data;
+  const parts = store.S.meta.restoreSections;
+  modal(
+    "Restore from backup",
+    `<p style="margin:0 0 12px">Backup from ${esc(when)}. Choose what to restore. Each ticked part <b>replaces</b> what this bot has now; unticked parts stay as they are.</p>
+<div class="checks" id="impParts" style="grid-template-columns:1fr">${Object.entries(parts)
+      .map(([k, label]) => `<label class="chk"><input type="checkbox" value="${k}" checked> ${esc(label)}</label>`)
+      .join("")}</div>
+<p class="note">Setting up a bot for another product? Untick "Product and knowledge sources" and "Snippets" to bring over only how the bot behaves. Download a backup of the current setup first.</p>`,
+    `<button class="btn" value="close">Cancel</button><button class="btn pri danger" type="button" data-act="importGo">Restore</button>`
+  );
+}
+
+let pending = null;
+A.importGo = (el) =>
+  busy(el, async () => {
+    const sections = $$("#impParts input:checked").map((i) => i.value);
+    if (!sections.length) throw new Error("Tick at least one part");
+    await api("/api/import", { data: pending, sections });
+    pending = null;
+    closeModal();
     toast("Restored. Reloading…");
     setTimeout(() => location.reload(), 900);
-  } catch (e) {
-    toast(e.message, { err: true });
-  }
-}
+  });
 
 R.changelog = async () => {
   const S = store.S;

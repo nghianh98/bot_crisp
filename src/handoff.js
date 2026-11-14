@@ -15,7 +15,7 @@ export const BRIEF_SCHEMA = {
   properties: {
     reason: { type: "string", description: "Why a human is needed, in a few words" },
     summary: { type: "string", description: "One sentence: what the customer needs" },
-    impact: { type: "string", description: "Who or what is affected and how badly: blocked or inconvenienced, live storefront or not, since when" },
+    impact: { type: "string", description: "Who or what is affected and how badly: blocked or inconvenienced, their own customers affected or not, since when" },
     details: { type: "array", items: { type: "string" }, description: "Facts the customer gave, one per item" },
     repro: { type: "array", items: { type: "string" }, description: "For bugs only: numbered steps to see the problem, with exact pages, buttons and error text" },
     tried: { type: "array", items: { type: "string" }, description: "What the customer already tried and what the bot already told them" },
@@ -24,13 +24,14 @@ export const BRIEF_SCHEMA = {
   },
 };
 
-export const BRIEF_RULE = `- "handoff_brief": when action is "handoff", a private note for the support team. The customer never sees it; the team reads it before replying, so they should not need to scroll up. Always write it in English, short and factual: only what is in the conversation, never guess or invent.
+// lang: ngôn ngữ viết ghi chú; extra: team dặn thêm nên ghi gì (cả hai sửa ở Escalation)
+export const briefRule = (env) => `- "handoff_brief": when action is "handoff", a private note for the support team. The customer never sees it; the team reads it before replying, so they should not need to scroll up. Always write it in ${env.__esc.noteLang}, short and factual: only what is in the conversation, never guess or invent.
   reason: why a human is needed (a few words). summary: one sentence on what the customer needs.
-  impact: who or what is affected and how badly (blocked or just inconvenienced, live storefront or not, since when), from what the customer said.
-  details: facts the customer gave (store URL, theme, page, error text, plan, amounts, dates), one per item.
+  impact: who or what is affected and how badly (blocked or just inconvenienced, their own customers affected or not, since when), from what the customer said.
+  details: facts the customer gave (account or site, page, error text, plan, amounts, dates), one per item.
   repro: only for bugs, the steps to see the problem (exact page, button, error text as the customer wrote it); empty list otherwise or if unknown.
   tried: what the customer already tried and what you already told them. missing: what the team still needs to ask (empty list if nothing).
-  next_step: the first thing the team should do (for example: check the app embed on the store, refund the duplicate charge, reply to an angry customer first).
+  next_step: the first thing the team should do (for example: check their setup, refund the duplicate charge, reply to an angry customer first).${env.__esc.noteExtra ? `\n  From the team, about this note: ${env.__esc.noteExtra.replace(/\n+/g, " ")}` : ""}
   For any other action, leave every field empty ("" and []).`;
 
 const line = (v, n = 300) => clip(v, n);

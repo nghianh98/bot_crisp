@@ -6,30 +6,90 @@ import { clip, getJSON, hash, list, putJSON, sleep } from "./util.js";
 
 const UA = { "User-Agent": "SupportBot-KB/2.0" };
 
-// Bài help center lấy từ sitemap.xml của trang (có hỗ trợ sitemap index). Chưa điền link help center → không có bài nào.
+export const MAX_HELP_PAGES = 300; // nhiều hơn thì prompt quá lớn: thu hẹp bằng Help center sections
+
+const locsOf = (xml) => [...xml.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\s\]]+)\s*(?:\]\]>)?\s*<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+
+/* Tìm sitemap của help center, thử lần lượt: <link help center>/sitemap.xml, các dòng "Sitemap:" trong robots.txt,
+   /sitemap.xml ở gốc trang, sitemap_index.xml. Sitemap index (chứa sitemap con) được đọc tiếp, tối đa 2 tầng.
+   Trả về danh sách link, hoặc null nếu không tìm thấy sitemap nào. */
+export async function readSitemaps(origin, prefix) {
+  let fetches = 0;
+  const get = async (url) => {
+    if (fetches++ >= 30) return null; // giữ trong hạn mức số request của Cloudflare
+    try {
+      const res = await fetch(url, { headers: UA });
+      return res.ok ? await res.text() : null;
+    } catch {
+      return null;
+    }
+  };
+  const read = async (url, depth = 0) => {
+    const xml = await get(url);
+    if (xml == null) return null;
+    const locs = locsOf(xml);
+    const subs = depth < 2 ? locs.filter((l) => /\.xml(\?|$)/i.test(l)).slice(0, 20) : [];
+    if (!subs.length) return locs.filter((l) => !/\.xml(\.gz)?(\?|$)/i.test(l));
+    const inner = await Promise.all(subs.map((x) => read(x, depth + 1)));
+    return [...locs.filter((l) => !/\.xml(\.gz)?(\?|$)/i.test(l)), ...inner.flatMap((x) => x || [])];
+  };
+  const tried = new Set();
+  const attempt = async (url) => {
+    if (tried.has(url)) return null;
+    tried.add(url);
+    const locs = await read(url);
+    return locs?.length ? locs : null;
+  };
+  let found = await attempt(`${origin}${prefix}/sitemap.xml`);
+  if (!found) {
+    const robots = await get(`${origin}/robots.txt`);
+    const listed = robots ? [...robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)].map((m) => m[1]).slice(0, 5) : [];
+    const all = (await Promise.all(listed.map(attempt))).filter(Boolean);
+    if (all.length) found = all.flat();
+  }
+  for (const url of [`${origin}/sitemap.xml`, `${origin}${prefix}/sitemap_index.xml`, `${origin}/sitemap_index.xml`]) found ||= await attempt(url);
+  return found;
+}
+
+// Link bài team tự dán (Settings → Help center pages), mỗi dòng 1 link
+export const manualHelpPages = (env) => cfg(env, "HELP_CENTER_PAGES").split("\n").map((l) => l.trim()).filter(Boolean);
+
+/* Bài help center = các link trong sitemap nằm dưới link help center (và trong các section đã chọn, nếu có)
+   + các link team tự dán. Chưa điền link help center → không có bài nào. */
 export async function listHelpCenterUrls(env) {
   const raw = cfg(env, "HELP_CENTER_URL");
-  if (!raw) return [];
-  const base = raw.replace(/\/$/, "");
-  const sections = list(cfg(env, "HELP_CENTER_SECTIONS")).map((s) => s.replace(/^\/|\/$/g, "")).filter(Boolean);
-  const origin = new URL(base).origin;
-  const read = async (url) => {
-    const res = await fetch(url, { headers: UA });
-    if (!res.ok) throw new Error(`sitemap ${res.status}`);
-    return [...(await res.text()).matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, "&"));
-  };
-  let locs = await read(`${base}/sitemap.xml`);
-  const subs = locs.filter((l) => /\.xml(\?|$)/i.test(l)).slice(0, 10); // sitemap index → đọc các sitemap con
-  if (subs.length) locs = [...locs.filter((l) => !subs.includes(l)), ...(await Promise.all(subs.map((s) => read(s).catch(() => [])))).flat()];
+  const manual = manualHelpPages(env);
+  if (!raw) {
+    if (manual.length) throw new Error("enter the help center link first, then the help center pages");
+    return [];
+  }
+  const base = new URL(raw.replace(/\/+$/, ""));
+  const origin = base.origin;
+  const prefix = base.pathname.replace(/\/+$/, ""); // "" hoặc "/hc/en-us": chỉ lấy bài dưới đường dẫn này
+  const sections = list(cfg(env, "HELP_CENTER_SECTIONS")).map((x) => x.replace(/^\/|\/$/g, "")).filter(Boolean);
   const urls = new Set();
-  for (const loc of locs) {
+  const outside = [];
+  for (const m of manual) {
+    try {
+      const u = new URL(m);
+      if (u.origin === origin) urls.add(origin + u.pathname);
+      else outside.push(m);
+    } catch {}
+  }
+  if (outside.length) throw new Error(`these help center pages are on another site than the help center link: ${outside.slice(0, 3).join(", ")}. Add pages from other sites on the Knowledge page (Website pages)`);
+  const locs = await readSitemaps(origin, prefix);
+  if (!locs && !urls.size) throw new Error(`no sitemap found for ${origin}${prefix} (tried sitemap.xml and robots.txt). Paste the article links under Help center pages instead`);
+  for (const loc of locs || []) {
     try {
       const u = new URL(loc);
       if (u.origin !== origin) continue;
-      if (sections.length && !sections.some((s) => u.pathname.startsWith(`/${s}/`))) continue;
+      if (prefix && u.pathname !== prefix && !u.pathname.startsWith(`${prefix}/`)) continue;
+      if (sections.length && !sections.some((x) => u.pathname.startsWith(`${prefix}/${x}/`))) continue;
       urls.add(origin + u.pathname);
     } catch {}
   }
+  if (!urls.size) throw new Error(`the sitemap lists no pages under ${origin}${prefix}${sections.length ? ` in the sections ${sections.join(", ")}` : ""}. Check the link and the sections`);
+  if (urls.size > MAX_HELP_PAGES) throw new Error(`the help center has ${urls.size} pages, more than the bot can load (${MAX_HELP_PAGES}). Narrow it down with Help center sections, for example only the articles path`);
   return [...urls].sort();
 }
 
@@ -67,33 +127,54 @@ export const cleanText = (s) =>
 // Chỗ đặt ảnh trong chữ của bài: ⟦img:N⟧, lúc lưu thay bằng chú thích + chữ AI đọc được trong ảnh (xem withImages)
 const IMG_MARK = (n) => `\n⟦img:${n}⟧\n`;
 
+const BLOCKS = { h1: "\n# ", h2: "\n## ", h3: "\n### ", h4: "\n### ", li: "\n- ", p: "\n", td: " | ", th: " | ", tr: "\n", pre: "\n", blockquote: "\n" };
+const MAX_IMAGES_PER_PAGE = 15;
+
+/* Vùng nội dung của bài help center, thử theo thứ tự (lấy vùng đầu tiên có chữ):
+   selector team điền (Settings → Article content area), .theme-doc-markdown (Docusaurus), <article>, <main>, [role=main].
+   Không vùng nào có chữ thì lấy cả trang như trang website. clean = bỏ menu, footer, form… nằm trong vùng đó. */
+const AREAS = [
+  [".theme-doc-markdown", false],
+  ["article", true],
+  ["main", true],
+  ['[role="main"]', true],
+];
+
+/** Selector team điền có dùng được không (HTMLRewriter chỉ hỗ trợ một phần CSS selector) */
+export function selectorError(sel) {
+  try {
+    new HTMLRewriter().on(sel, {});
+    return null;
+  } catch (e) {
+    return e?.message || "unsupported selector";
+  }
+}
+
 export async function extractPage(env, url) {
   const res = await fetch(url, { headers: UA });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
-  let title = "", main = "", article = "", body = "", skip = 0;
-  const imgs = { main: [], article: [] };
-  const blocks = { h1: "\n# ", h2: "\n## ", h3: "\n### ", h4: "\n### ", li: "\n- ", p: "\n", td: " | ", th: " | ", tr: "\n", pre: "\n", blockquote: "\n" };
+  let title = "", body = "", skip = 0, aside = 0;
   const rw = new HTMLRewriter().on("title", { text: (t) => void (title += t.text) });
+  const areas = [];
   if (new URL(url).origin === helpOrigin(env)) {
-    // Help center: ưu tiên phần nội dung bài (Docusaurus .theme-doc-markdown, rồi thẻ article); không có thì lấy cả trang như dưới
-    for (const [tag, prefix] of Object.entries(blocks)) {
-      rw.on(`.theme-doc-markdown ${tag}`, { element: () => void (main += prefix) });
-      rw.on(`article ${tag}`, { element: () => void (article += prefix) });
+    const custom = cfg(env, "HELP_CENTER_SELECTOR").trim();
+    for (const [sel, clean] of [...(custom && !selectorError(custom) ? [[custom, true]] : []), ...AREAS]) {
+      const a = { text: "", imgs: [] };
+      areas.push(a);
+      const hidden = () => clean && (skip > 0 || aside > 0);
+      for (const [tag, prefix] of Object.entries(BLOCKS)) rw.on(`${sel} ${tag}`, { element: () => void (a.text += prefix) });
+      rw.on(sel, { text: (t) => void (hidden() ? 0 : (a.text += t.text)) });
+      // Ảnh trong bài (ảnh chụp màn hình, bảng, danh sách…): nhớ chỗ đặt + link + chú thích
+      rw.on(`${sel} img`, {
+        element(el) {
+          if (hidden() || a.imgs.length >= MAX_IMAGES_PER_PAGE) return;
+          const src = imageUrl(el, url);
+          if (!src) return;
+          const n = a.imgs.push({ src, alt: cleanText(el.getAttribute("alt") || "") }) - 1;
+          a.text += IMG_MARK(n);
+        },
+      });
     }
-    rw.on(".theme-doc-markdown", { text: (t) => void (main += t.text) });
-    rw.on("article", { text: (t) => void (article += t.text) });
-    // Ảnh trong bài (ảnh chụp màn hình, bảng, danh sách…): nhớ chỗ đặt + link + chú thích
-    const onImg = (where) => ({
-      element(el) {
-        const src = imageUrl(el.getAttribute("src"), url);
-        if (!src) return;
-        const n = imgs[where].push({ src, alt: cleanText(el.getAttribute("alt") || "") }) - 1;
-        if (where === "main") main += IMG_MARK(n);
-        else article += IMG_MARK(n);
-      },
-    });
-    rw.on(".theme-doc-markdown img", onImg("main"));
-    rw.on("article img", onImg("article"));
   }
   // Trang website bất kỳ: lấy chữ trong body, bỏ menu, footer, script
   rw.on("script,style,noscript,svg,nav,footer,form,iframe,template", {
@@ -101,29 +182,41 @@ export async function extractPage(env, url) {
       try { el.onEndTag(() => void skip--); skip++; } catch {}
     },
   });
-  for (const [tag, prefix] of Object.entries({ ...blocks, div: "\n", section: "\n", br: "\n" })) rw.on(`body ${tag}`, { element: () => void (body += prefix) });
+  rw.on("aside", {
+    element(el) {
+      try { el.onEndTag(() => void aside--); aside++; } catch {}
+    },
+  });
+  for (const [tag, prefix] of Object.entries({ ...BLOCKS, div: "\n", section: "\n", br: "\n" })) rw.on(`body ${tag}`, { element: () => void (body += prefix) });
   rw.on("body", { text: (t) => void (skip ? 0 : (body += t.text)) });
   await rw.transform(res).arrayBuffer();
-  const noImg = (s) => s.replace(/⟦img:\d+⟧/g, "").trim();
-  const [text, images] = noImg(cleanText(main)) ? [cleanText(main), imgs.main] : noImg(cleanText(article)) ? [cleanText(article), imgs.article] : [cleanText(body), []];
+  const noImg = (x) => x.replace(/⟦img:\d+⟧/g, "").trim();
+  const area = areas.find((a) => noImg(cleanText(a.text)));
+  const [text, images] = area ? [cleanText(area.text), area.imgs] : [cleanText(body), []];
   const h1 = text.match(/^# (.+)$/m)?.[1];
   return { url, title: (h1 || cleanText(title).split("|")[0] || url).trim(), body: text, images };
 }
 
-// Link ảnh đầy đủ; bỏ ảnh nhúng (data:) và hình vẽ .svg (icon, logo)
-function imageUrl(src, base) {
-  try {
-    const u = new URL(String(src || "").trim(), base);
-    if (!/^https?:$/.test(u.protocol) || /\.svg$/i.test(u.pathname)) return null;
-    return u.toString();
-  } catch {
-    return null;
+// Link ảnh đầy đủ (kể cả ảnh tải chậm: data-src, srcset); bỏ ảnh nhúng (data:), hình vẽ .svg và ảnh nhỏ (icon, emoji, avatar)
+function imageUrl(el, base) {
+  const small = (v) => /^\d+$/.test(v || "") && +v < 50;
+  if (small(el.getAttribute("width")) || small(el.getAttribute("height")) || /(^|[\s_-])(emoji|avatar|icon)s?($|[\s_-])/i.test(el.getAttribute("class") || "")) return null;
+  const srcset = (el.getAttribute("srcset") || el.getAttribute("data-srcset") || "").split(",")[0].trim().split(/\s+/)[0];
+  const cands = [el.getAttribute("src"), el.getAttribute("data-src"), el.getAttribute("data-lazy-src"), el.getAttribute("data-original"), srcset];
+  for (const c of cands) {
+    if (!c || !String(c).trim()) continue; // không có thuộc tính này (chuỗi rỗng sẽ thành link của chính trang)
+    try {
+      const u = new URL(String(c).trim(), base);
+      if (/^https?:$/.test(u.protocol) && !/\.svg$/i.test(u.pathname)) return u.toString();
+    } catch {}
   }
+  return null;
 }
 
 /* Chữ trong ảnh của help center: nhiều thông tin chỉ nằm trong ảnh (vd danh sách app tương thích là 3 ảnh chụp).
    Mỗi ảnh cho AI đọc 1 lần, lưu ở img:<hash link ảnh>; sync lần sau dùng lại, không tốn thêm.
-   Help center (Docusaurus) đổi tên file khi ảnh đổi, nên link mới = ảnh mới = đọc lại. */
+   Ảnh đổi link (nhiều help center đổi tên file khi ảnh đổi) = ảnh mới = tự đọc lại.
+   Ảnh đổi nội dung mà giữ nguyên link: team bấm "Read images again" trên trang Knowledge (tăng cfg:kb.imgRev). */
 const IMG_V = 1; // tăng khi đổi cách đọc ảnh → đọc lại hết
 const IMAGE_SCHEMA = {
   type: "object",
@@ -136,7 +229,7 @@ const IMAGE_SCHEMA = {
 };
 
 export async function imageText(env, img, title, budget) {
-  const key = `img:${await hash(img.src)}`;
+  const key = `img:${await hash(budget?.rev ? `${img.src}#${budget.rev}` : img.src)}`; // rev tăng khi team bấm "Read images again"
   const cached = await getJSON(env, key);
   if (cached?.v === IMG_V) return cached.text;
   if (!env.OPENAI_API_KEY || !budget || budget.left <= 0) return null; // chưa đọc: lần sync sau đọc tiếp
@@ -146,7 +239,7 @@ export async function imageText(env, img, title, budget) {
       instructions: `You read images from the help center of ${productLine(env)}, so that a support bot can answer customers' questions from them.
 Write down the information in the image that a customer could ask about: names in lists (apps, plans, languages, countries…), table rows, settings and their values, menu paths, page titles, button and field labels.
 - Plain text, one item per line. For cards or list entries write "Name: short description".
-- Skip the browser and Shopify admin chrome (side bar icons, top bar), decorative pictures and anything you cannot read.
+- Skip the browser frame and the navigation around the screen (side bar icons, top bar), decorative pictures and anything you cannot read.
 - Do not describe colors or layout, and never guess text you cannot read.
 Set useful to false when the image has no such information (a photo, a logo, a decorative picture).`,
       input: [{ role: "user", content: [
@@ -182,7 +275,8 @@ export async function withImages(env, page, budget) {
 
 export const articleValue = (page) => `<article url="${page.url}" title="${page.title.replace(/"/g, "'")}">\n${page.body}\n</article>`;
 
-export async function storePage(env, url, budget = { left: Number(cfg(env, "IMAGES_PER_RUN")) }) {
+export async function storePage(env, url, budget = null) {
+  budget ||= { left: Number(cfg(env, "IMAGES_PER_RUN")), rev: ((await getJSON(env, "cfg:kb")) || {}).imgRev || 0 };
   const page = await extractPage(env, url);
   page.body = await withImages(env, page, budget);
   if (!page.body) return page;
@@ -218,7 +312,6 @@ async function saveSync(env, st, prevWrite) {
 export async function newSyncJob(env, kbCfg, by) {
   if (!env.KB) throw new Error("The KV binding KB is missing");
   const help = await listHelpCenterUrls(env);
-  if (cfg(env, "HELP_CENTER_URL") && !help.length) throw new Error("the help center sitemap lists no articles");
   const urls = [...help, ...(kbCfg?.web || [])];
   const now = Date.now();
   return { urls, i: 0, updated: 0, failed: [], by: by || null, started: now, touched: now };
@@ -230,7 +323,8 @@ export async function stepSync(env, st, kbCfg) {
   const prevWrite = job.touched;
   const per = Math.max(1, Number(cfg(env, "PAGES_PER_RUN")) || 6);
   const batch = job.urls.slice(job.i, job.i + per);
-  const budget = { left: Number(cfg(env, "IMAGES_PER_RUN")) }; // số ảnh mới AI đọc trong bước này (cả 6 trang dùng chung)
+  kbCfg ||= (await getJSON(env, "cfg:kb")) || {};
+  const budget = { left: Number(cfg(env, "IMAGES_PER_RUN")), rev: kbCfg.imgRev || 0 }; // số ảnh mới AI đọc trong bước này (cả 6 trang dùng chung)
   const results = await Promise.all(
     batch.map((url) =>
       storePage(env, url, budget).catch((e) => {

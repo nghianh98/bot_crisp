@@ -32,7 +32,11 @@ function syncNote() {
   if (y.error) parts.push(`The last automatic sync couldn't start (${esc(y.error.msg)}); it tries again every hour.`);
   else if (k.autoSync !== "off" && y.next) parts.push(`Next automatic sync ${inDays(y.next)}.`);
   else if (k.autoSync === "off") parts.push("Automatic sync is off.");
-  return `<p class="note" style="margin-top:8px">${parts.join(" ")}</p>`;
+  if (k.articles.some((a) => a.src === "help")) parts.push(`<button type="button" class="lk" data-act="imgReread">Read images again</button>`);
+  // Everything that is on goes to the AI with each reply: warn when that gets very large
+  const size = k.articles.filter((a) => !a.off).reduce((t, a) => t + (a.chars || 0), 0);
+  const big = size > 600000 ? `<p class="note warn" style="margin-top:6px">The knowledge that is on is very large (about ${n(Math.round(size / 6))} words). All of it is sent to the AI with every reply, so replies get slower and cost more. Turn off articles the bot doesn't need, or narrow Help center sections in Settings.</p>` : "";
+  return `<p class="note" style="margin-top:8px">${parts.join(" ")}</p>${big}`;
 }
 
 R.content = () => {
@@ -127,6 +131,14 @@ async function setAutoSync(sel) {
   }
 }
 
+// An image changed but kept the same link: have the AI read every help center image again on the next sync
+A.imgReread = async () => {
+  if (syncing) return;
+  if (!(await confirmBox("Read all images again?", "During the next sync the AI reads every image in the help center again. Use this when an image changed but kept the same link. Each image costs a little AI usage.", "Read again", false))) return;
+  store.S.kb = (await api("/api/kb", { op: "rereadImages" })).kb;
+  return A.syncAll();
+};
+
 // Sync all sources: start, then keep stepping while the page shows progress. Each step reads a few pages.
 A.syncAll = async () => {
   if (syncing) return;
@@ -200,9 +212,9 @@ A.snipImport = () =>
     "Bulk import",
     `<p class="hint">Write each pair as a Q: line (question) and an A: line (answer), with a blank line between pairs. H: and Đ: also work.</p>
 <textarea class="in" id="imp" rows="12" placeholder="Q: Do you offer free setup?
-A: Yes. Send us your store URL and the team sets it up within 24 working hours.
+A: Yes. Send us your account email and the team sets it up within 24 working hours.
 
-Q: Does the app work with my theme?
+Q: Can I change my plan later?
 A: …"></textarea>`,
     `<button class="btn" value="close">Cancel</button><button class="btn pri" type="button" data-act="snipImportGo">Import</button>`,
     { onOpen: (d) => d.querySelector("#imp").focus() }

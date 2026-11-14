@@ -1,5 +1,5 @@
 // Overview: how the bot is doing, this month's numbers, to-dos, connections, latest replies.
-import { chipsFor, esc, fmtClock, fmtDay, fmtTime, getAn, guard, header, monthLabel, n, pct, plural, R, setMain, store } from "../core.js";
+import { chipsFor, esc, fmtClock, fmtDay, fmtTime, getAn, guard, header, monthLabel, n, pct, plural, R, setMain, store, tzLabel } from "../core.js";
 import { fig } from "../components.js";
 
 export function statusSentence() {
@@ -9,13 +9,14 @@ export function statusSentence() {
     offline: "The bot answers when nobody on the team is online in Crisp.",
     always: "The bot answers every message, even when the team is online.",
   }[s.mode];
-  return `${mode} ${s.businessHours ? `Team working hours: ${esc(s.businessHours)} (GMT+${store.S.meta.utcOffset}).` : "Working hours aren't set."}`;
+  return `${mode} ${s.businessHours ? `Team working hours: ${esc(s.businessHours)} (${tzLabel(store.S.meta.utcOffset)}).` : "Working hours aren't set."}`;
 }
 
 function todos(a) {
   const S = store.S;
   const t = [];
   for (const h of S.health.filter((x) => !x.ok)) t.push(["bad", `${h.label} isn't ready`, h.fix]);
+  if (S.settings.product === "our product" || !S.settings.productDesc) t.push(["todo", "The product isn't described yet", "Add the product name and a short description so the bot knows what it supports.", "#settings", "Open settings"]);
   if (S.settings.mode === "off") t.push(["todo", "The bot is off", "Pick another mode in Bot mode on the left when you want the bot to answer customers."]);
   if (S.pending) t.push(["todo", `${plural(S.pending, "question")} the bot couldn't answer`, "Add snippets so the bot can answer them next time.", "#suggestions", "See suggestions"]);
   if (a?.feedback.down) t.push(["todo", `${plural(a.feedback.down, "customer")} rated an answer not helpful`, "Review what the bot told them.", "#conversations?down", "See conversations"]);

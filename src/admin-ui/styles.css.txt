@@ -1,4 +1,4 @@
-/* Transtore Bot admin. Light UI, navy ink, blue for actions and the bot's voice, orange only for the bot's identity. */
+/* Support bot admin. Light UI, navy ink, blue for actions and the bot's voice, orange only for the bot's identity. */
 :root {
   --ink: #16213a;
   --ink2: #4b5670;
@@ -219,6 +219,9 @@ select.in { padding-right: 28px; }
 .fb i { display: block; height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; min-width: 2px; }
 .fv { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .fv small { font-weight: 400; color: var(--ink3); margin-left: 4px; }
+.h3 { font-size: 14.5px; margin: 0; }
+.row.li { align-items: center; padding: 8px 16px; }
+.row.li .in { padding: 7px 10px; }
 .note { font-size: 12.5px; color: var(--ink3); margin: 10px 0 0; max-width: 80ch; }
 
 /* ---------- Follow-up flow strip ---------- */
