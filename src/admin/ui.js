@@ -16,13 +16,16 @@ const PAGE_HEADERS = {
     "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
-const NOT_BUILT = "The admin page isn't built yet. Run `npm run build`, then deploy again.";
+// Thiếu file giao diện: chưa build trước khi deploy, hoặc đang chạy ở khung Preview của dashboard Cloudflare
+// (khung đó chạy code Worker nhưng không có binding ASSETS).
+const NOT_BUILT = "The admin page files aren't available here. Deploy with `npm run deploy` (it builds them first). The preview inside the Cloudflare dashboard can't show the admin.";
 
-const indexHtml = (env, origin) => (env.ASSETS ? env.ASSETS.fetch(new Request(`${origin}/admin/index.html`)) : null);
+// Luôn trả về Promise (null khi không có binding ASSETS), để nơi gọi dùng await / .catch được
+const indexHtml = async (env, origin) => (env.ASSETS ? env.ASSETS.fetch(new Request(`${origin}/admin/index.html`)) : null);
 
 /** Trang /admin: file index.html do Vite tạo ra, kèm các header bảo mật */
 export async function adminPage(env, url) {
-  const res = await indexHtml(env, url.origin);
+  const res = await indexHtml(env, url.origin).catch(() => null);
   if (!res?.ok) return new Response(NOT_BUILT, { status: 500 });
   return new Response(res.body, { headers: PAGE_HEADERS });
 }
@@ -30,8 +33,8 @@ export async function adminPage(env, url) {
 /** File giao diện: /admin/assets/<tên>-<mã nội dung>.js|css. Tên file đổi mỗi khi nội dung đổi, nên trình duyệt giữ được lâu. */
 export async function uiFile(env, request) {
   if (!env.ASSETS) return new Response(NOT_BUILT, { status: 500 });
-  const res = await env.ASSETS.fetch(request);
-  if (res.status !== 200 && res.status !== 304) return new Response("Not found", { status: 404 });
+  const res = await env.ASSETS.fetch(request).catch(() => null);
+  if (!res || (res.status !== 200 && res.status !== 304)) return new Response("Not found", { status: 404 });
   const headers = new Headers(res.headers);
   headers.set("cache-control", "private, max-age=31536000, immutable");
   headers.set("x-content-type-options", "nosniff");
