@@ -46,7 +46,23 @@ npm run dev:ui
 
 Đăng nhập ở http://localhost:8787/admin trước, rồi mở http://localhost:5173/admin/. Trang này tự cập nhật ngay khi lưu file, không cần tải lại. `npm run dev` vẫn phải chạy song song vì dữ liệu lấy từ đó.
 
+## Bot trả lời như thế nào
+
+1. Crisp gửi webhook → Worker kiểm chữ ký, rồi giao việc cho Durable Object của hội thoại đó (`src/conversation.js`).
+2. Durable Object chờ vài giây để gộp các tin khách gửi liên tiếp, rồi trả lời. Nó không bị giới hạn 30 giây như webhook, nên AI được nghĩ kỹ (mức nghĩ chọn ở Settings → AI, có cả High).
+3. Trước khi gọi AI, bot đọc cả cuộc chat (mọi trang tin nhắn của Crisp), ghi chú riêng của team, thông tin khách và ảnh khách gửi.
+4. Help center lớn (trên khoảng 150.000 ký tự): một lượt AI ngắn viết lại câu hỏi cho đủ ý và chọn bài theo tên, rồi chỉ các bài sát nhất được đưa vào prompt (`src/retrieval.js`). Help center nhỏ thì đưa cả. Snippet luôn được đưa đủ.
+
+Sau lần deploy đầu có các thay đổi này, bấm **Sync now** ở trang Knowledge một lần để tạo bảng tra bài.
+
 ## Kiểm tra trước khi đưa lên
+
+```bash
+npm test
+```
+
+Chạy test các hàm lõi (vài giây). `npm run check` và mọi lần build đều chạy test trước.
+
 
 ```bash
 npm run check

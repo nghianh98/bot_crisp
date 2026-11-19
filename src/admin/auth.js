@@ -24,14 +24,8 @@ const COOKIE_OPTS = `Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 60 *
 async function signedIn(env, location, name) {
   const headers = new Headers({ Location: location });
   headers.append("Set-Cookie", `${COOKIE}=${await adminToken(env)}; ${COOKIE_OPTS}`);
-  if (name !== undefined) headers.append("Set-Cookie", `${WHO_COOKIE}=${encodeURIComponent(name || "Admin")}; ${COOKIE_OPTS}`);
+  headers.append("Set-Cookie", `${WHO_COOKIE}=${encodeURIComponent(name || "Admin")}; ${COOKIE_OPTS}`);
   return new Response(null, { status: 303, headers });
-}
-
-/** Link cũ dạng /admin?key=...: đổi sang cookie rồi bỏ key khỏi đường dẫn */
-export function keyLogin(env, url) {
-  if (env.ADMIN_KEY && url.searchParams.get("key") === env.ADMIN_KEY) return signedIn(env, url.origin + "/admin");
-  return loginPage(env, "/admin");
 }
 
 export function whoOf(request) {

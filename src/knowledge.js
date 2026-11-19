@@ -2,6 +2,7 @@
 // Kiến thức của bot: sync help center và trang website vào KV (bấm Sync now trên /admin hoặc tự động theo lịch).
 import { callOpenAI, productLine } from "./ai.js";
 import { cfg, withConfig } from "./config.js";
+import { INDEX_KEY, buildIndex, splitArticles } from "./retrieval.js";
 import { clip, getJSON, hash, list, putJSON, sleep } from "./util.js";
 
 const UA = { "User-Agent": "SupportBot-KB/2.0" };
@@ -438,6 +439,9 @@ export async function rebuildKnowledge(env, { urls = null, listHash = null, kbCf
     articles,
   };
   await env.KB.put("kb:text", parts.join("\n\n"));
+  // Bảng tra để chọn bài theo câu hỏi khi help center lớn (retrieval.js). Chỉ gồm các bài đang bật.
+  const docs = articles.filter((a) => !a.off).map((a) => ({ id: a.id, ...(splitArticles(values[keep.indexOf("page:" + a.id)])[0] || { url: a.url, title: a.title, body: "" }) }));
+  await putJSON(env, INDEX_KEY, buildIndex(docs));
   await putJSON(env, "kb:meta", next);
   return next;
 }

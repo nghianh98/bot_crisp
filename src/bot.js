@@ -2,9 +2,10 @@
 // Luồng trả lời khách: nhận sự kiện từ Crisp, quyết định trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến.
 import { classify, generateReply } from "./ai.js";
 import { FEEDBACK_ID, cfg, currentMode } from "./config.js";
-import { compose, crisp, getCustomer, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
+import { compose, crisp, getCustomer, getMessages, getSegments, isBotMessage, operatorsOnline, sendFeedbackPicker, sendMessage, sendNote, updateSegments } from "./crisp.js";
 import { scheduleAfterReply, scheduleFollowup, unscheduleFollowup } from "./followup.js";
 import { handoffNote } from "./handoff.js";
+import { runSoon } from "./runner.js";
 import { clearState, getState, setState } from "./state.js";
 import { appendLog, markLog, recordStats } from "./stats.js";
 import { tagKeys, tagName, tagOfSegment } from "./tags.js";
@@ -52,7 +53,10 @@ export async function onVisitorMessage(env, websiteId, sessionId, m) {
   const fb = feedbackChoice(m);
   if (fb) return onFeedback(env, websiteId, sessionId, fb);
 
-  await sleep(Number(cfg(env, "DEBOUNCE_MS"))); // gộp các tin gửi liên tiếp
+  // Gộp các tin gửi liên tiếp rồi trả lời. Có Durable Object (conversation.js): giao việc cho nó, không bị giới hạn 30 giây.
+  const debounce = Number(cfg(env, "DEBOUNCE_MS"));
+  if (await runSoon(env, { w: websiteId, sid: sessionId, fp: m.fingerprint }, debounce)) return;
+  await sleep(debounce);
   return respond(env, websiteId, sessionId, { fingerprint: m.fingerprint });
 }
 
@@ -73,7 +77,10 @@ export async function onFeedback(env, websiteId, sessionId, fb) {
     return true;
   });
   await markLog(env, sessionId, { fb: up ? "up" : "down" });
-  if (!up) return respond(env, websiteId, sessionId, { feedbackNo: true });
+  if (!up) {
+    if (await runSoon(env, { w: websiteId, sid: sessionId, no: true })) return;
+    return respond(env, websiteId, sessionId, { feedbackNo: true });
+  }
   if (currentMode(env) === "off") return;
   await sendMessage(env, websiteId, sessionId, env.__fu.thanksText);
   if (env.__fu.close) {
@@ -84,7 +91,7 @@ export async function onFeedback(env, websiteId, sessionId, fb) {
 
 export async function respond(env, websiteId, sessionId, { fingerprint, feedbackNo = false } = {}) {
   const path = `/website/${websiteId}/conversation/${sessionId}/messages`;
-  const messages = await crisp(env, "GET", path);
+  const messages = await getMessages(env, websiteId, sessionId); // cả cuộc chat, không chỉ loạt tin mới nhất
   if (!feedbackNo && !shouldAnswer(messages, fingerprint)) return;
   let state = await getState(env, sessionId);
   if (state === "human") return;
@@ -117,16 +124,19 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   }
 
   const limit = Number(cfg(env, "HISTORY_LIMIT"));
-  let history = toHistory(messages, limit, feedbackNo);
+  let history = capHistory(toHistory(messages, limit, feedbackNo), Number(cfg(env, "HISTORY_CHARS")));
   if (feedbackNo && history.at(-1)?.role !== "user") history = [...history, { role: "user", content: env.__fu.noLabel }];
   if (!history.length) return;
 
   // Bật "đang soạn" + đọc thông tin khách app đã gửi vào Crisp (store domain, plan…) để bot không hỏi lại
   const [customer] = await Promise.all([getCustomer(env, websiteId, sessionId), compose(env, websiteId, sessionId, true)]);
+  // AI nghĩ lâu (chạy trong Durable Object): nhắc lại "đang soạn" đều đặn để khách biết bot vẫn đang trả lời
+  const typing = env.__long ? setInterval(() => compose(env, websiteId, sessionId, true), 8000) : null;
   let r;
   try {
-    r = await generateReply(env, history, { handedOff, customer, earlierCase });
+    r = await generateReply(env, history, { handedOff, customer, earlierCase, notes: teamNotes(env, messages) });
   } catch (e) {
+    clearInterval(typing);
     console.error("[ai] Lỗi OpenAI:", e?.message || e);
     if (handedOff || state === "failed") {
       // Đã báo khách "team sẽ trả lời" ở lần trước: không lặp lại câu đó. AI hỏng 2 lần liền → coi như đã chuyển người.
@@ -135,6 +145,7 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
     }
     r = { reply: env.__fu.fallbackText, action: "handoff", category: "other", knowledge_gap: false, urgent: false, priority: null, sources: [], failed: clip(e?.message || String(e), 200) };
   }
+  clearInterval(typing);
   await compose(env, websiteId, sessionId, false);
   if (handedOff && r.action === "ask_info") r.action = "answer";
 
@@ -250,6 +261,27 @@ export function pauseHours(messages) {
   if (i < 0 || sorted[i].from !== "user") return 0;
   while (i > 0 && sorted[i - 1].from === "user") i--;
   return i > 0 ? (sorted[i].timestamp - sorted[i - 1].timestamp) / 3600000 : 0;
+}
+
+// Ghi chú riêng team viết trong hội thoại (private note), cũ → mới. Ghi chú bàn giao của chính bot thì bỏ (bot đã biết).
+export function teamNotes(env, messages, max = 8) {
+  return [...(messages || [])]
+    .filter((x) => x.type === "note" && typeof x.content === "string" && x.content.trim() && !isBotMessage(env, x))
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+    .slice(-max)
+    .map((x) => ({ by: clip(x.user?.nickname, 40), t: x.timestamp || 0, text: clip(x.content, 600, true) }));
+}
+
+// Cuộc chat quá dài: bỏ bớt các lượt cũ nhất cho tới khi vừa maxChars ký tự (luôn giữ lượt cuối, và bắt đầu bằng lượt của khách)
+export function capHistory(history, maxChars) {
+  let h = history;
+  let total = h.reduce((n, x) => n + x.content.length, 0);
+  while (h.length > 1 && total > maxChars) {
+    total -= h[0].content.length;
+    h = h.slice(1);
+  }
+  while (h.length > 1 && h[0].role !== "user") h = h.slice(1);
+  return h;
 }
 
 // File khách gửi có phải ảnh AI đọc được không (Crisp: content = { name, url, type })

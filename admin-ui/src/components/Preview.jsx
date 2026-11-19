@@ -40,6 +40,11 @@ function BotMessage({ m, i, initial }) {
             <div>
               Sources: <SrcLinks sources={r.sources} />
             </div>
+            {r.kb ? (
+              <div className="muted" title={(r.kb.titles || []).join("\n")}>
+                Read {r.kb.used} of {r.kb.total} help center articles{r.kb.question ? `, searching for: ${r.kb.question}` : ""}
+              </div>
+            ) : null}
             {r.teamNote ? (
               <details className="tnote" open>
                 <summary>Note for the team (only the team sees it)</summary>

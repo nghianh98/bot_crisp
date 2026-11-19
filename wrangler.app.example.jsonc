@@ -31,6 +31,11 @@
     "logs": { "enabled": true, "head_sampling_rate": 1, "persist": true, "invocation_logs": true }
   },
   "keep_vars": true,
+  // Mỗi hội thoại 1 Durable Object lo việc trả lời khách (src/conversation.js): không bị giới hạn 30 giây sau webhook,
+  // nên AI được nghĩ kỹ hơn. Deploy tự tạo, không phải làm gì thêm trên dashboard. Dùng được cả gói Free (loại SQLite).
+  // Bỏ 2 mục này thì bot vẫn chạy, theo cách cũ (trả lời trong 30 giây).
+  "durable_objects": { "bindings": [{ "name": "CONV", "class_name": "Conversation" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation"] }],
   "kv_namespaces": [
     {
       "id": "DÁN_ID_KV_CỦA_APP_MỚI_VÀO_ĐÂY", // lấy từ lệnh: npx wrangler kv namespace create <tên-app>-bot-kb

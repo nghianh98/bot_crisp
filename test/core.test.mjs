@@ -1,0 +1,191 @@
+// Test các hàm lõi (chạy: npm test). `npm run build` chạy test trước, nên test lỗi thì không deploy được.
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { capHistory, pauseHours, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
+import { effortLevel } from "../src/config.js";
+import { freshTimestamp, getMessages, verifySignature } from "../src/crisp.js";
+import { alreadyNudged, claimDue, processFollowups } from "../src/followup.js";
+import { buildIndex, loadKnowledge, rank, select, splitArticles } from "../src/retrieval.js";
+import { notesBlock } from "../src/ai.js";
+
+const env = { BOT_NAME: "Bot" };
+const msg = (from, content, t, extra = {}) => ({ from, type: "text", content, timestamp: t, fingerprint: t, ...extra });
+const bot = (content, t, extra = {}) => msg("operator", content, t, { user: { nickname: "Bot" }, ...extra });
+
+function fakeKV(init = {}) {
+  const m = new Map(Object.entries(init));
+  return { m, get: async (k) => m.get(k) ?? null, put: async (k, v) => void m.set(k, v), delete: async (k) => void m.delete(k) };
+}
+
+test("shouldAnswer: only when the customer's message is the last one and is the one we were woken for", () => {
+  const ms = [msg("user", "hi", 1), bot("hello", 2), msg("user", "help", 3)];
+  assert.equal(shouldAnswer(ms, 3), true);
+  assert.equal(shouldAnswer(ms, 1), false); // a newer customer message exists
+  assert.equal(shouldAnswer([...ms, msg("operator", "on it", 4)], 3), false);
+  assert.equal(shouldAnswer([...ms, { from: "operator", type: "note", content: "x", timestamp: 4 }], 3), true); // notes don't count
+});
+
+test("toHistory merges turns, keeps images, drops notes", () => {
+  const ms = [
+    msg("user", "it is broken", 1),
+    { from: "user", type: "file", content: { name: "a.png", url: "https://x/a.png", type: "image/png" }, timestamp: 2 },
+    { from: "operator", type: "note", content: "secret", timestamp: 3 },
+    bot("which page?", 4),
+    msg("user", "checkout", 5),
+  ];
+  const h = toHistory(ms, 20);
+  assert.equal(h.length, 3);
+  assert.deepEqual(h[0].images, ["https://x/a.png"]);
+  assert.ok(!JSON.stringify(h).includes("secret"));
+  assert.deepEqual(toHistory([msg("user", "q", 1), bot("a", 2)], 20), []); // nothing to answer
+});
+
+test("capHistory drops the oldest turns and starts with the customer", () => {
+  const h = [{ role: "user", content: "a".repeat(50) }, { role: "assistant", content: "b".repeat(50) }, { role: "user", content: "c".repeat(50) }];
+  assert.deepEqual(capHistory(h, 1000), h);
+  assert.deepEqual(capHistory(h, 120).map((x) => x.role), ["user"]);
+  assert.equal(capHistory(h, 1).length, 1); // always keeps the last turn
+});
+
+test("teamNotes keeps the team's notes, not the bot's", () => {
+  const ms = [
+    { from: "operator", type: "note", content: "Refunded on Monday", timestamp: 2, user: { nickname: "Linh" } },
+    { from: "operator", type: "note", content: "handoff note", timestamp: 3, user: { nickname: "Bot" } },
+    msg("user", "hi", 1),
+  ];
+  const notes = teamNotes(env, ms);
+  assert.deepEqual(notes.map((n) => n.text), ["Refunded on Monday"]);
+  assert.match(notesBlock("Acme", notes), /Linh, 1970-01-01: Refunded on Monday/);
+  assert.equal(notesBlock("Acme", []), "");
+});
+
+test("pauseHours measures the gap before the customer's latest messages", () => {
+  const H = 3600000;
+  assert.equal(pauseHours([msg("user", "a", 0), bot("b", H), msg("user", "c", 4 * H), msg("user", "d", 4 * H + 5)]), 3);
+});
+
+test("getMessages pages back through the whole conversation", async () => {
+  const pages = { "": [msg("user", "c", 30), msg("user", "d", 40)], 30: [msg("user", "a", 10), msg("user", "b", 20)], 10: [] };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const before = new URL(url).searchParams.get("timestamp_before") || "";
+    calls.push(before);
+    return new Response(JSON.stringify({ error: false, data: pages[before] }), { status: 200 });
+  };
+  try {
+    const all = await getMessages({ CRISP_IDENTIFIER: "i", CRISP_KEY: "k" }, "w", "s");
+    assert.deepEqual(all.map((x) => x.content), ["a", "b", "c", "d"]);
+    assert.deepEqual(calls, ["", "30", "10"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("verifySignature accepts Crisp's signature on the raw body and rejects others", async () => {
+  const raw = '{"event":"message:send","data":{"content":"xin chào"}}';
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode("s3cret"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`[123;${raw}]`));
+  const sig = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  assert.equal(await verifySignature("s3cret", raw, JSON.parse(raw), "123", sig), true);
+  assert.equal(await verifySignature("other", raw, JSON.parse(raw), "123", sig), false);
+  assert.equal(await verifySignature("s3cret", raw, JSON.parse(raw), "124", sig), false);
+  assert.equal(await verifySignature("", raw, JSON.parse(raw), "123", sig), false);
+});
+
+test("freshTimestamp rejects old requests, in seconds or milliseconds", () => {
+  const now = 1_800_000_000_000;
+  assert.equal(freshTimestamp(String(now - 60000), now), true);
+  assert.equal(freshTimestamp(String(now - 11 * 60000), now), false);
+  assert.equal(freshTimestamp(String((now - 60000) / 1000), now), true);
+  assert.equal(freshTimestamp("garbage", now), true);
+});
+
+test("claimDue takes due items out of the queue", () => {
+  const now = 1_000_000_000_000;
+  const q = { a: { due: now - 1, from: now - 10 }, b: { due: now + 1000, from: now }, old: { due: now + 1, from: now - 9 * 86400000 } };
+  const [due, rest, changed] = claimDue(q, now, 8);
+  assert.deepEqual(due.map((x) => x[0]), ["a"]);
+  assert.deepEqual(Object.keys(rest), ["b"]);
+  assert.equal(changed, true);
+  assert.equal(claimDue({ b: q.b }, now, 8)[2], false);
+});
+
+test("processFollowups saves the queue before working, and never nudges twice", async () => {
+  const now = Date.now();
+  const KB = fakeKV({ "fu:queue": JSON.stringify({ s1: { w: "w", step: "nudge", kind: "answer", from: now - 60000, due: now - 1 } }) });
+  const sent = [];
+  let queueDuringSend = null;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opt) => {
+    if (opt.method === "POST") {
+      queueDuringSend = KB.m.get("fu:queue");
+      sent.push(JSON.parse(opt.body).content);
+      return new Response(JSON.stringify({ error: false, data: {} }));
+    }
+    const history = [msg("user", "q", 1), bot("answer", 2), ...sent.map((c, i) => bot(c, 3 + i))];
+    return new Response(JSON.stringify({ error: false, data: history }));
+  };
+  try {
+    const e = { KB, CRISP_IDENTIFIER: "i", CRISP_KEY: "k", BOT_MODE: "always", BOT_NAME: "Bot" };
+    await processFollowups(e);
+    assert.equal(sent.length, 1);
+    assert.equal(queueDuringSend, "{}"); // the due item was already out of the saved queue while the nudge was being sent
+    // A second, overlapping run that still holds the old item must not nudge again
+    KB.m.set("fu:queue", JSON.stringify({ s1: { w: "w", step: "nudge", kind: "answer", from: now - 60000, due: now - 1 } }));
+    await processFollowups(e);
+    assert.equal(sent.length, 1);
+    assert.equal(alreadyNudged(e, [bot(sent[0], 5)], sent[0]), true);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+const article = (url, title, body) => `<article url="${url}" title="${title}">\n${body}\n</article>`;
+const KB_TEXT = [
+  article("https://h/install", "Install the app", "Open the Shopify App Store and click Add app. Approve the permissions."),
+  article("https://h/billing", "Plans and billing", "Upgrade or downgrade your plan. Refunds are handled by the team. Invoices are in Shopify."),
+  article("https://h/switcher", "Language switcher not showing", "If the switcher does not appear on the storefront, enable the app embed in the theme editor."),
+  article("https://h/glossary", "Glossary", "Keep brand names untranslated with glossary rules."),
+].join("\n\n");
+
+test("retrieval ranks the matching article first and respects the budget", () => {
+  const arts = splitArticles(KB_TEXT);
+  assert.equal(arts.length, 4);
+  const index = buildIndex(arts);
+  const scores = rank(index, "the language switcher is not showing on my store");
+  assert.equal(scores.indexOf(Math.max(...scores)), 2);
+  assert.deepEqual(select(index, { query: "refund invoice", max: 1 }).chosen, [1]);
+  assert.deepEqual(select(index, { query: "zzz", picked: [3], max: 1 }).chosen, [3]); // the AI's pick by title wins
+  assert.equal(select(index, { query: "", max: 2 }).chosen.length, 2); // nothing matches → still returns articles
+  const tight = select(index, { query: "switcher theme embed install app", budget: 10, max: 5 });
+  assert.equal(tight.chosen.length, 1); // always at least one article, never over budget after that
+});
+
+test("loadKnowledge: small help center goes in whole, large one is narrowed down", async () => {
+  const history = [{ role: "user", content: "language switcher not showing" }];
+  const index = buildIndex(splitArticles(KB_TEXT).map((a, i) => ({ ...a, id: "/p" + i })));
+  const pages = Object.fromEntries(splitArticles(KB_TEXT).map((a, i) => ["page:/p" + i, a.text]));
+  const KB = fakeKV({ "kb:text": KB_TEXT, "kb:index": JSON.stringify(index), ...pages });
+  const small = await loadKnowledge({ KB }, history);
+  assert.equal(small.text, KB_TEXT);
+  assert.equal(small.info, undefined);
+  const big = await loadKnowledge({ KB, KB_FULL_CHARS: "100", KB_MAX_ARTICLES: "1" }, history);
+  assert.match(big.text, /Language switcher not showing/);
+  assert.doesNotMatch(big.text, /Plans and billing/);
+  assert.match(big.extra, /Plans and billing: https:\/\/h\/billing/);
+  assert.deepEqual([big.info.used, big.info.total], [1, 4]);
+  // The AI's rewritten question and picks are used, and a failing refine step falls back to keywords
+  const refined = await loadKnowledge({ KB, KB_FULL_CHARS: "100", KB_MAX_ARTICLES: "1" }, [{ role: "user", content: "vẫn không được" }], async () => ({ question: "How do I get a refund?", keywords: ["refund"], articles: [1] }));
+  assert.match(refined.text, /Plans and billing/);
+  const failed = await loadKnowledge({ KB, KB_FULL_CHARS: "100", KB_MAX_ARTICLES: "1" }, history, async () => { throw new Error("slow"); });
+  assert.match(failed.text, /Language switcher not showing/);
+  // Help center synced before the index existed: works from kb:text
+  const legacy = await loadKnowledge({ KB: fakeKV({ "kb:text": KB_TEXT }), KB_FULL_CHARS: "100", KB_MAX_ARTICLES: "1" }, history);
+  assert.match(legacy.text, /Language switcher not showing/);
+});
+
+test("effort 'high' only when replies can run long", () => {
+  assert.equal(effortLevel({ OPENAI_REASONING_EFFORT: "high" }), "medium");
+  assert.equal(effortLevel({ OPENAI_REASONING_EFFORT: "high", __long: true }), "high");
+});

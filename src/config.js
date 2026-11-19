@@ -24,6 +24,10 @@ export const DEFAULTS = {
   // nên: lần gọi đầu tối đa AI_FIRST_MS; nếu hỏng thì thử lại 1 lần, nghĩ ít hơn, sao cho tổng không quá AI_TOTAL_MS.
   AI_FIRST_MS: "16000",
   AI_TOTAL_MS: "24000",
+  // Khi câu trả lời chạy trong Durable Object của hội thoại (conversation.js) thì không còn giới hạn 30 giây:
+  // AI được nghĩ lâu hơn, dùng được mức nghĩ "high", đọc nhiều ảnh hơn. Khách thấy "đang soạn" trong lúc chờ.
+  AI_FIRST_MS_LONG: "45000",
+  AI_TOTAL_MS_LONG: "90000",
   HELP_CENTER_URL: "", // trống = chưa có help center (chỉ dùng snippet và trang website)
   HELP_CENTER_SECTIONS: "", // vd "docs,faq": chỉ lấy bài có đường dẫn /docs/… /faq/… ; trống = cả trang
   HELP_CENTER_PAGES: "", // link bài help center, mỗi dòng 1 link: dùng khi help center không có sitemap (hoặc để thêm bài sitemap thiếu)
@@ -38,7 +42,16 @@ export const DEFAULTS = {
   TAG_PREFIX: "issue-",
   CLASSIFY_ON_RESOLVE: "true",
   DEBOUNCE_MS: "2500",
-  HISTORY_LIMIT: "20",
+  // Bot đọc cả cuộc chat: lấy tối đa MESSAGE_PAGES trang tin nhắn từ Crisp, đưa cho AI HISTORY_LIMIT lượt gần nhất
+  // (các tin liên tiếp của cùng một người là 1 lượt), tổng không quá HISTORY_CHARS ký tự (bỏ bớt lượt cũ nhất).
+  HISTORY_LIMIT: "60",
+  HISTORY_CHARS: "60000",
+  MESSAGE_PAGES: "6",
+  // Help center lớn hơn KB_FULL_CHARS ký tự: mỗi câu trả lời chỉ đưa các bài sát câu hỏi nhất (retrieval.js),
+  // tối đa KB_MAX_ARTICLES bài và KB_BUDGET_CHARS ký tự. Nhỏ hơn thì đưa cả help center như trước.
+  KB_FULL_CHARS: "150000",
+  KB_BUDGET_CHARS: "80000",
+  KB_MAX_ARTICLES: "14",
   // Cách bot dùng snippet: "knowledge" = là kiến thức, AI tự soạn câu trả lời cho đúng câu khách hỏi;
   // "exact" = câu hỏi khớp snippet thì gửi nguyên văn câu trả lời của snippet. Chọn trên /admin → Knowledge.
   // (Từng snippet có thể đánh dấu "luôn gửi nguyên văn" dù đang ở chế độ knowledge.)
@@ -47,6 +60,7 @@ export const DEFAULTS = {
   // Bật/tắt trên /admin → Settings → AI. Mỗi câu trả lời chỉ gửi CUSTOMER_IMAGES_MAX ảnh mới nhất (mỗi ảnh tốn thêm chút tiền AI).
   CUSTOMER_IMAGES: "on",
   CUSTOMER_IMAGES_MAX: "3",
+  CUSTOMER_IMAGES_MAX_LONG: "6", // khi chạy trong Durable Object (không bị giới hạn 30 giây)
   PAGES_PER_RUN: "6",
   // Ảnh trong help center: mỗi bước sync cho AI đọc tối đa ngần này ảnh MỚI (ảnh đã đọc thì lấy lại bản đã lưu).
   // Ảnh chưa kịp đọc thì để lần sync sau. Mỗi ảnh tối đa IMAGE_READ_MS mili giây.
@@ -193,7 +207,7 @@ export const SETTINGS_FIELDS = {
   utcOffset: { env: "UTC_OFFSET_HOURS", label: "Time zone", values: UTC_OFFSETS },
   supportEmail: { env: "SUPPORT_EMAIL", label: "Support email", max: 120, check: (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), error: "That email address isn't valid" },
   model: { env: "OPENAI_MODEL", label: "AI model", max: 60, required: true },
-  effort: { env: "OPENAI_REASONING_EFFORT", label: "Reasoning effort", values: ["off", "low", "medium"] },
+  effort: { env: "OPENAI_REASONING_EFFORT", label: "Reasoning effort", values: ["off", "low", "medium", "high"] },
   customerImages: { env: "CUSTOMER_IMAGES", label: "Images from customers", values: ["on", "off"] },
 };
 
@@ -239,11 +253,13 @@ export function withAiKey(env, saved) {
   return { ...env, __cfOpenAI: cf, OPENAI_API_KEY: key, __aiKey: { from, hint: keyHint(key), by: saved?.key ? saved.by || null : null, at: saved?.key ? saved.at || null : null, cloudflare: !!cf } };
 }
 
-// Mức "nghĩ" của AI: off (không nghĩ, nhanh nhất) | low | medium.
-// "high" từng có trong Settings nhưng AI nghĩ lâu hơn thời gian khách chờ được, nên coi như "medium".
+// Mức "nghĩ" của AI: off (không nghĩ, nhanh nhất) | low | medium | high.
+// "high" chỉ dùng được khi câu trả lời chạy trong Durable Object (env.__long): trong giới hạn 30 giây của cách cũ
+// AI nghĩ lâu hơn thời gian cho phép, nên khi đó coi như "medium".
 export function effortLevel(env) {
   const e = cfg(env, "OPENAI_REASONING_EFFORT");
-  return e === "high" ? "medium" : ["off", "low", "medium"].includes(e) ? e : "low";
+  if (e === "high") return env.__long ? "high" : "medium";
+  return ["off", "low", "medium"].includes(e) ? e : "low";
 }
 
 export function currentMode(env) {

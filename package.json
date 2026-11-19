@@ -3,12 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "vite build --config vite.config.mjs",
+    "build": "npm test && vite build --config vite.config.mjs",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "dev:ui": "vite --config vite.config.mjs",
     "start": "wrangler dev",
-    "check": "wrangler deploy --dry-run --outdir dist",
+    "check": "npm test && wrangler deploy --dry-run --outdir dist",
+    "test": "node --test",
     "logs": "wrangler tail",
     "versions": "wrangler versions list"
   },

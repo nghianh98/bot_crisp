@@ -24,7 +24,8 @@ export async function api(env, request, url) {
     body = (await request.json().catch(() => ({}))) || {};
   }
   const who = whoOf(request);
-  env = await withConfig(env);
+  // Có Durable Object: bot thật trả lời không bị giới hạn 30 giây, nên khung Test the bot và Settings cũng chạy như vậy
+  env = await withConfig(env.CONV ? { ...env, __long: true } : env);
   try {
     switch (`${request.method} ${url.pathname}`) {
       case "GET /api/state": return json(await apiState(env, url, who));
@@ -112,6 +113,7 @@ export async function apiState(env, url, who) {
       { label: "Crisp keys", ok: !!(env.CRISP_IDENTIFIER && env.CRISP_KEY), fix: "Add CRISP_IDENTIFIER and CRISP_KEY in Cloudflare" },
       { label: "Crisp webhook signature", ok: !!env.CRISP_HOOK_SECRET || cfg(env, "VERIFY_HOOKS") === "false", fix: "Add CRISP_HOOK_SECRET in Cloudflare" },
       { label: "OpenAI key", ok: !!env.OPENAI_API_KEY, detail: env.__aiKey?.from === "admin" ? `Saved in Settings → AI (${env.__aiKey.hint})` : "Set in Cloudflare (OPENAI_API_KEY)", fix: "Add a key in Settings → AI" },
+      { label: "Long thinking time", ok: !!env.CONV, detail: "Replies run in a Durable Object, without the 30 second limit", fix: "Add the durable_objects binding CONV and its migration in wrangler.jsonc, then deploy" },
       { label: "Help center", ok: (meta.pages || 0) > 0, detail: meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles in use` : "Not loaded yet", fix: cfg(env, "HELP_CENTER_URL") ? "Click Sync now on the Knowledge page. Also check the Cron trigger * * * * * is on in Cloudflare." : "Add your help center link in Settings → Product, then click Sync now on the Knowledge page." },
     ],
     pending: log.items.filter((x) => x.gap && !x.st).length,

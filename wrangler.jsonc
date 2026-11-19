@@ -27,7 +27,7 @@
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
-    "redact_query_string": false,
+    "redact_query_string": true,
     "issues": { "enabled": true }, // tab Issues trên dashboard (gom lỗi); đang bật trên Cloudflare, giữ cho khớp
     "logs": {
       "enabled": true,
@@ -48,6 +48,11 @@
     "BUSINESS_HOURS": "Mon-Sun 08:00-24:00",
     "SUPPORT_EMAIL": "support@transtore.app"
   },
+  // Mỗi hội thoại 1 Durable Object lo việc trả lời khách (src/conversation.js): không bị giới hạn 30 giây sau webhook,
+  // nên AI được nghĩ kỹ hơn. Deploy tự tạo, không phải làm gì thêm trên dashboard. Dùng được cả gói Free (loại SQLite).
+  // Bỏ 2 mục này thì bot vẫn chạy, theo cách cũ (trả lời trong 30 giây).
+  "durable_objects": { "bindings": [{ "name": "CONV", "class_name": "Conversation" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation"] }],
   "kv_namespaces": [
     {
       "id": "8dfd5426a1414f89a37d1b2fe4a80237",

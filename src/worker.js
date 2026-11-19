@@ -20,14 +20,17 @@
  */
 
 import { api } from "./admin/api.js";
-import { isAdmin, keyLogin, login, logout } from "./admin/auth.js";
+import { isAdmin, login, logout } from "./admin/auth.js";
 import { loginPage, statusPage } from "./admin/pages.js";
 import { adminPage, uiFile } from "./admin/ui.js";
 import { handleEvent, respond } from "./bot.js";
 import { cfg, withConfig } from "./config.js";
-import { verifySignature } from "./crisp.js";
+import { freshTimestamp, verifySignature } from "./crisp.js";
 import { processFollowups } from "./followup.js";
 import { cronSync } from "./knowledge.js";
+
+// Durable Object lo việc trả lời từng hội thoại (không bị giới hạn 30 giây sau webhook): xem conversation.js
+export { Conversation } from "./conversation.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -38,7 +41,8 @@ export default {
     if (p === "/login" && request.method === "POST") return login(env, url, request);
     if (p === "/logout") return logout(url);
     if (p === "/admin" || p === "/admin/") {
-      if (url.searchParams.has("key")) return keyLogin(env, url);
+      // Link cũ /admin?key=... không còn đăng nhập được (mật khẩu trong đường dẫn dễ lọt vào log, lịch sử trình duyệt): bỏ key khỏi đường dẫn
+      if (url.searchParams.has("key")) return Response.redirect(`${url.origin}/admin`, 302);
       if (!(await isAdmin(env, request))) return loginPage(env, "/admin");
       return adminPage(env, url);
     }
@@ -69,7 +73,13 @@ export async function onHook(request, env, ctx) {
     return new Response("bad json", { status: 400 });
   }
   if (cfg(env, "VERIFY_HOOKS") !== "false") {
-    const ok = await verifySignature(env.CRISP_HOOK_SECRET || "", raw, body, request.headers.get("x-crisp-request-timestamp"), request.headers.get("x-crisp-signature"));
+    const ts = request.headers.get("x-crisp-request-timestamp");
+    const ok = await verifySignature(env.CRISP_HOOK_SECRET || "", raw, body, ts, request.headers.get("x-crisp-signature"));
+    // Chữ ký đúng nhưng request quá cũ: có thể là request thật bị ai đó bắt được rồi gửi lại → bỏ qua
+    if (ok && !freshTimestamp(ts)) {
+      console.warn("[hook] Request quá cũ, bỏ qua", body?.event);
+      return new Response("ok");
+    }
     if (!ok) {
       // Không ghi secret hay chữ ký ra log; chỉ ghi đủ để biết lỗi nằm ở đâu
       console.warn("[hook] Sai chữ ký, bỏ qua", body?.event, `(CRISP_HOOK_SECRET ${env.CRISP_HOOK_SECRET ? "có" : "THIẾU"}, có header chữ ký: ${!!request.headers.get("x-crisp-signature")})`);

@@ -13,7 +13,7 @@ const MODES = [
   ["offline", "When team is offline", "The bot only replies when nobody on the team is online in Crisp."],
   ["always", "Always on", "The bot replies to every message, even when the team is online."],
 ];
-const EFFORT = [["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"]]; // the levels the bot accepts (config.js)
+const EFFORT = [["off", "Off"], ["low", "Low (recommended)"], ["medium", "Medium"], ["high", "High (smartest, slowest)"]]; // the levels the bot accepts (config.js)
 const IMAGES = [["on", "The AI looks at them"], ["off", "Ignore them (the bot only sees the file name)"]];
 
 /** "Mon-Fri 08:00-18:00" → { days: Set of 0..6, open, close } */
@@ -454,7 +454,9 @@ export default function Settings() {
             </div>
           </div>
           <div className="fr">
-            <label htmlFor="ef">Reasoning effort</label>
+            <label htmlFor="ef">
+              Reasoning effort<small>How long the AI thinks before it answers. Higher is smarter on hard questions and slower. High needs "Long thinking time" to be ready (see Status below); without it the bot uses Medium.</small>
+            </label>
             <select className="in" id="ef" style={{ width: "auto" }} value={d.effort} onChange={up("effort")}>
               {EFFORT.map(([v, l]) => (
                 <option key={v} value={v}>

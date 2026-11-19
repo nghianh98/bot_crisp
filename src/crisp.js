@@ -21,6 +21,15 @@ export async function verifySignature(secret, raw, body, timestamp, signature) {
   return false;
 }
 
+// Timestamp Crisp ký kèm webhook có còn mới không (mặc định trong 10 phút). Crisp gửi mili giây; số nhỏ thì coi là giây.
+// Không đọc được số → cho qua (chữ ký đã đúng), để một thay đổi định dạng phía Crisp không làm bot im hẳn.
+export function freshTimestamp(timestamp, now = Date.now(), maxAgeMs = 10 * 60000) {
+  let t = Number(timestamp);
+  if (!Number.isFinite(t) || t <= 0) return true;
+  if (t < 1e12) t *= 1000;
+  return Math.abs(now - t) <= maxAgeMs;
+}
+
 export const isBotMessage = (env, x) => x.from === "operator" && (x.user?.nickname === cfg(env, "BOT_NAME") || String(x.content?.id || "").startsWith("tb-"));
 
 export async function crisp(env, method, path, body) {
@@ -33,6 +42,32 @@ export async function crisp(env, method, path, body) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) throw new Error(`Crisp ${method} ${path} → ${res.status} ${data.reason || ""}`);
   return data.data;
+}
+
+/* Mọi tin nhắn của hội thoại (kể cả ghi chú riêng của team), cũ → mới.
+   Crisp chỉ trả về loạt tin mới nhất mỗi lần gọi; lấy thêm các loạt cũ hơn bằng timestamp_before, tối đa maxPages loạt.
+   Loạt cũ lấy hỏng thì dùng phần đã có (bot vẫn trả lời được). */
+export async function getMessages(env, websiteId, sessionId, maxPages = Number(cfg(env, "MESSAGE_PAGES"))) {
+  const path = `/website/${websiteId}/conversation/${sessionId}/messages`;
+  const id = (x) => x.fingerprint ?? `${x.timestamp}:${x.from}:${x.type}`;
+  let all = (await crisp(env, "GET", path)) || [];
+  const seen = new Set(all.map(id));
+  for (let page = 1; page < maxPages && all.length; page++) {
+    const oldest = all.reduce((t, x) => Math.min(t, x.timestamp || Infinity), Infinity);
+    if (!Number.isFinite(oldest)) break;
+    let older;
+    try {
+      older = (await crisp(env, "GET", `${path}?timestamp_before=${oldest}`)) || [];
+    } catch (e) {
+      console.warn("[crisp] Không lấy được tin cũ hơn:", e?.message || e);
+      break;
+    }
+    const fresh = older.filter((x) => !seen.has(id(x)));
+    if (!fresh.length) break;
+    for (const x of fresh) seen.add(id(x));
+    all = [...fresh, ...all];
+  }
+  return all.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 }
 
 export function botUser(env) {

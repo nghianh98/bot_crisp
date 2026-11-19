@@ -12,6 +12,9 @@ CÂY THƯ MỤC
 
 worker.js           Cổng vào: nhận webhook của Crisp, mở trang /admin, chạy cron mỗi phút
 bot.js              Luồng trả lời khách: trả lời / hỏi thêm / chuyển cho team, nút hỏi ý kiến
+conversation.js     Durable Object của từng hội thoại: gộp tin gửi liên tiếp rồi gọi bot.js trả lời, không bị giới hạn 30 giây
+runner.js           Giao việc trả lời cho conversation.js (thiếu binding CONV thì bot trả lời theo cách cũ, trong 30 giây)
+retrieval.js        Help center lớn: chọn các bài sát câu hỏi nhất để đưa vào prompt (bảng tra kb:index tạo lúc sync)
 ai.js               Soạn prompt, gọi OpenAI, chọn tag
 handoff.js          Ghi chú bàn giao: private note cho team khi bot chuyển khách (bật/tắt ở Escalation)
 followup.js         Nhắc khách khi im lặng, kết thúc ca, tự Resolve
@@ -50,6 +53,11 @@ admin-ui/
 wrangler tự chạy lệnh này trước mỗi lần `npm run dev`, `npm run check` và `npm run deploy`, rồi đưa build/ lên cùng Worker.
 Sửa giao diện cho nhanh: chạy `npm run dev` ở một cửa sổ, `npm run dev:ui` ở cửa sổ khác, mở http://localhost:5173/admin/
 (đăng nhập trước ở http://localhost:8787/admin). Trang tự cập nhật mỗi lần lưu file.
+
+TEST
+
+test/core.test.mjs (ngoài src/): test các hàm lõi, chạy bằng `npm test`. `npm run build` chạy test trước,
+nên test lỗi thì cả `npm run deploy` lẫn tự deploy từ GitHub đều dừng, bot giữ nguyên bản đang chạy.
 
 LƯU Ý
 
