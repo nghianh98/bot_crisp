@@ -1,7 +1,8 @@
 // Test các hàm lõi (chạy: npm test). `npm run build` chạy test trước, nên test lỗi thì không deploy được.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { capHistory, pauseHours, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
+import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
+import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
 import { freshTimestamp, getMessages, verifySignature } from "../src/crisp.js";
 import { alreadyNudged, claimDue, processFollowups } from "../src/followup.js";
@@ -188,4 +189,48 @@ test("loadKnowledge: small help center goes in whole, large one is narrowed down
 test("effort 'high' only when replies can run long", () => {
   assert.equal(effortLevel({ OPENAI_REASONING_EFFORT: "high" }), "medium");
   assert.equal(effortLevel({ OPENAI_REASONING_EFFORT: "high", __long: true }), "high");
+});
+
+const resolved = (t, from = "operator") => ({ from, type: "event", content: { namespace: "state:resolved" }, timestamp: t });
+
+test("resolvedSinceLastReply: a customer who writes again after Resolve starts a new chat", () => {
+  const human = (c, t) => msg("operator", c, t, { user: { nickname: "Linh" } });
+  assert.equal(resolvedSinceLastReply([msg("user", "a", 1), human("done", 2), resolved(3), msg("user", "hi again", 4)]), true);
+  assert.equal(resolvedSinceLastReply([msg("user", "a", 1), human("done", 2), msg("user", "thanks", 3)]), false); // never resolved
+  assert.equal(resolvedSinceLastReply([msg("user", "a", 1), resolved(2), human("one more thing", 3), msg("user", "ok", 4)]), false); // team wrote after the resolve
+  assert.equal(resolvedSinceLastReply([msg("user", "a", 1), human("done", 2), resolved(3)]), false); // no new customer message
+  // The resolve event itself must not count as "someone already replied"
+  assert.equal(shouldAnswer([msg("user", "a", 1), human("done", 2), resolved(3, "user"), msg("user", "hi again", 4), resolved(5)], 4), true);
+});
+
+test("respond: bot answers again in a resolved chat even when the resolve webhook never arrived", async () => {
+  const now = Date.now();
+  const history = [msg("user", "old question", now - 5000), msg("operator", "fixed it", now - 4000, { user: { nickname: "Linh" } }), resolved(now - 3000), msg("user", "new question", now - 1000)];
+  const run = async (messages) => {
+    const KB = fakeKV({ "state:s": "human" });
+    const sent = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opt = {}) => {
+      url = String(url);
+      if (url.includes("/v1/responses")) return new Response(JSON.stringify({ status: "completed", output_text: JSON.stringify({ reply: "Here you go.", action: "answer", category: "how-to", knowledge_gap: false, urgent: false, priority: "P4", sources: [] }) }));
+      const u = new URL(url);
+      if ((opt.method || "GET") === "GET") {
+        if (u.pathname.endsWith("/messages")) return new Response(JSON.stringify({ error: false, data: u.searchParams.has("timestamp_before") ? [] : messages }));
+        return new Response(JSON.stringify({ error: false, data: { segments: ["bot-paused"], data: {} } }));
+      }
+      const body = JSON.parse(opt.body || "{}");
+      if (opt.method === "POST" && body.type === "text") sent.push(body.content);
+      return new Response(JSON.stringify({ error: false, data: {} }));
+    };
+    try {
+      const e = await withConfig({ KB, CRISP_IDENTIFIER: "i", CRISP_KEY: "k", OPENAI_API_KEY: "sk", BOT_MODE: "always", BOT_NAME: "Bot" });
+      await respond(e, "w", "s", { fingerprint: messages.at(-1).fingerprint });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    return { sent, state: KB.m.get("state:s") ?? null };
+  };
+  assert.deepEqual(await run(history), { sent: ["Here you go."], state: null });
+  // Not resolved: a teammate is still handling it, the bot stays quiet
+  assert.deepEqual(await run(history.filter((x) => x.type !== "event")), { sent: [], state: "human" });
 });

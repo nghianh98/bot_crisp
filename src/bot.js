@@ -47,8 +47,9 @@ export async function onVisitorMessage(env, websiteId, sessionId, m) {
   });
   await unscheduleFollowup(env, sessionId); // khách đã nhắn lại → huỷ lời nhắc
 
-  if (!list(cfg(env, "BOT_ORIGINS")).includes(m.origin)) return;
-  if (!["text", "file", "picker"].includes(m.type)) return;
+  // Ghi lý do mỗi lần bot không trả lời (xem bằng `npm run logs` hoặc tab Logs của worker), để khỏi phải đoán
+  if (!list(cfg(env, "BOT_ORIGINS")).includes(m.origin)) return skipped(sessionId, `tin đến từ kênh "${m.origin}", bot chỉ trả lời kênh ${cfg(env, "BOT_ORIGINS")}`);
+  if (!["text", "file", "picker"].includes(m.type)) return skipped(sessionId, `loại tin "${m.type}"`);
 
   const fb = feedbackChoice(m);
   if (fb) return onFeedback(env, websiteId, sessionId, fb);
@@ -92,12 +93,22 @@ export async function onFeedback(env, websiteId, sessionId, fb) {
 export async function respond(env, websiteId, sessionId, { fingerprint, feedbackNo = false } = {}) {
   const path = `/website/${websiteId}/conversation/${sessionId}/messages`;
   const messages = await getMessages(env, websiteId, sessionId); // cả cuộc chat, không chỉ loạt tin mới nhất
-  if (!feedbackNo && !shouldAnswer(messages, fingerprint)) return;
+  if (!feedbackNo && !shouldAnswer(messages, fingerprint)) return skipped(sessionId, "khách đã nhắn tin mới hơn, hoặc đã có người trả lời sau tin của khách");
   let state = await getState(env, sessionId);
-  if (state === "human") return;
+  // Hội thoại đã được Resolve sau lần cuối team/bot nhắn, rồi khách nhắn lại: là cuộc chat mới, bot hoạt động lại.
+  // Bình thường webhook session:set_state đã xoá trạng thái lúc Resolve (onResolved). Chỗ này là lưới an toàn khi webhook đó
+  // không tới (hook chưa chọn sự kiện session:set_state, Crisp gửi trễ, Resolve bằng công cụ khác…): nếu không, bot im tới 14 ngày.
+  if (state && resolvedSinceLastReply(messages)) {
+    console.log(`[bot] ${sessionId}: hội thoại đã Resolve trước tin mới của khách, bỏ trạng thái "${state}"`);
+    await clearState(env, sessionId);
+    state = null;
+    const sg = env.__tags.segments;
+    await updateSegments(env, websiteId, sessionId, { remove: [sg.paused, sg.handoff, sg.urgent, sg.p1, sg.p2] }).catch((e) => console.warn("[bot] Không gỡ được segment:", e?.message || e));
+  }
+  if (state === "human") return skipped(sessionId, "nhân viên đã nhắn trong hội thoại này và hội thoại chưa Resolve");
   const mode = currentMode(env);
-  if (mode === "off") return;
-  if (mode === "offline" && (await operatorsOnline(env, websiteId))) return;
+  if (mode === "off") return skipped(sessionId, "bot đang tắt");
+  if (mode === "offline" && (await operatorsOnline(env, websiteId))) return skipped(sessionId, "chế độ offline và team đang online");
 
   // Đã chuyển người nhưng khách im lâu rồi mới nhắn lại ("hi there" vài tiếng sau): coi là cuộc chat mới.
   // Case cũ vẫn nằm trong inbox của team (segment giữ nguyên); AI chỉ nhắc tới nó khi khách hỏi.
@@ -211,6 +222,21 @@ export async function respond(env, websiteId, sessionId, { fingerprint, feedback
   if (!handedOff && r.action !== "handoff") await scheduleAfterReply(env, websiteId, sessionId, r.action);
 }
 
+const skipped = (sessionId, why) => console.log(`[bot] Không trả lời ${sessionId}: ${why}`);
+
+const isResolveEvent = (x) => x.type === "event" && x.content?.namespace === "state:resolved";
+
+// Crisp ghi sự kiện "state:resolved" vào lịch sử mỗi lần hội thoại được Resolve. → true khi lần Resolve gần nhất nằm SAU
+// mọi tin của team và của bot (không tính ghi chú), và TRƯỚC loạt tin mới nhất của khách: tức là khách mở lại một hội thoại đã đóng.
+export function resolvedSinceLastReply(messages) {
+  const sorted = [...(messages || [])].filter((x) => x.type !== "note" && x.timestamp).sort((a, b) => a.timestamp - b.timestamp);
+  const resolvedAt = sorted.filter(isResolveEvent).at(-1)?.timestamp;
+  if (!resolvedAt) return false;
+  const lastOurs = sorted.filter((x) => x.from === "operator" && x.type !== "event").at(-1)?.timestamp || 0;
+  const lastUser = sorted.filter((x) => x.from === "user" && x.type !== "event").at(-1)?.timestamp || 0;
+  return resolvedAt > lastOurs && lastUser > resolvedAt;
+}
+
 // Hội thoại Resolve: bật lại bot + phân loại (tag issue-…) cho báo cáo
 export async function onResolved(env, websiteId, sessionId) {
   await clearState(env, sessionId); // bot hoạt động lại cho lần chat sau
@@ -247,7 +273,7 @@ export async function onResolved(env, websiteId, sessionId) {
 }
 
 export function shouldAnswer(messages, fingerprint) {
-  const sorted = [...(messages || [])].filter((x) => x.type !== "note").sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const sorted = [...(messages || [])].filter((x) => x.type !== "note" && x.type !== "event").sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   const lastUserIdx = sorted.map((x) => x.from).lastIndexOf("user");
   if (lastUserIdx < 0) return false;
   if (fingerprint != null && sorted[lastUserIdx].fingerprint != null && sorted[lastUserIdx].fingerprint !== fingerprint) return false;
