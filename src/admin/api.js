@@ -571,9 +571,19 @@ export async function apiLogUpdate(env, body) {
   const ids = new Set([].concat(body.ids || [], body.id || []));
   const hit = log.items.filter((x) => ids.has(x.id));
   if (!hit.length) bad("Conversation not found. Reload the page.");
-  for (const it of hit) {
-    if (body.st === "fixed" || body.st === "dismissed") it.st = body.st;
-    else delete it.st;
+  if (body.del === true) {
+    // Xoá hẳn khỏi trang Suggestions (không còn ở Open lẫn Handled). Câu trả lời của bot vẫn nằm ở trang Conversations,
+    // chỉ bỏ dấu "thiếu kiến thức". Mục kiểu cũ (legacy) chỉ hiện ở Suggestions nên bỏ luôn khỏi nhật ký.
+    log.items = log.items.filter((x) => !(ids.has(x.id) && x.legacy));
+    for (const it of hit) {
+      it.gap = false;
+      delete it.st;
+    }
+  } else {
+    for (const it of hit) {
+      if (body.st === "fixed" || body.st === "dismissed") it.st = body.st;
+      else delete it.st;
+    }
   }
   await putJSON(env, `log:${month}`, log);
   return { items: hit };

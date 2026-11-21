@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
+import { apiLogUpdate } from "../src/admin/api.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
 import { freshTimestamp, getMessages, verifySignature } from "../src/crisp.js";
@@ -233,4 +234,25 @@ test("respond: bot answers again in a resolved chat even when the resolve webhoo
   assert.deepEqual(await run(history), { sent: ["Here you go."], state: null });
   // Not resolved: a teammate is still handling it, the bot stays quiet
   assert.deepEqual(await run(history.filter((x) => x.type !== "event")), { sent: [], state: "human" });
+});
+
+test("apiLogUpdate: delete removes a question from Suggestions for good, the reply stays in the log", async () => {
+  const items = [
+    { id: "old", t: 1, q: "old report question", gap: true, legacy: true },
+    { id: "a", t: 2, sid: "s1", q: "junk", a: "reply", gap: true, st: "dismissed" },
+    { id: "b", t: 3, sid: "s2", q: "real gap", a: "reply", gap: true },
+  ];
+  const KB = fakeKV({ "log:2026-11": JSON.stringify({ items, legacy: true }) });
+  const r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["old", "a"], del: true });
+  assert.equal(r.items.length, 2);
+  const saved = JSON.parse(KB.m.get("log:2026-11"));
+  assert.equal(saved.legacy, true); // old gaps:YYYY-MM entries aren't merged in again
+  assert.deepEqual(saved.items, [
+    { id: "a", t: 2, sid: "s1", q: "junk", a: "reply", gap: false },
+    { id: "b", t: 3, sid: "s2", q: "real gap", a: "reply", gap: true },
+  ]);
+  // Dismiss still only marks the question
+  await apiLogUpdate({ KB }, { month: "2026-11", ids: ["b"], st: "dismissed" });
+  assert.equal(JSON.parse(KB.m.get("log:2026-11")).items[1].st, "dismissed");
+  await assert.rejects(apiLogUpdate({ KB }, { month: "2026-11", ids: ["old"], del: true }), /not found/);
 });

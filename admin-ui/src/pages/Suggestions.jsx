@@ -1,8 +1,8 @@
-// Suggestions: questions the bot had no knowledge for; AI grouping; create a snippet or dismiss.
+// Suggestions: questions the bot had no knowledge for; AI grouping; create a snippet, dismiss or delete.
 import { useEffect } from "react";
 import { MonthNav } from "../components/common.jsx";
 import { openImprove } from "../components/Snippet.jsx";
-import { Btn, Header } from "../components/ui.jsx";
+import { Btn, Header, act, confirmBox } from "../components/ui.jsx";
 import { api } from "../lib/api.js";
 import { fmtClock, fmtDay, monthLabel, n, plural } from "../lib/format.js";
 import { useLog } from "../lib/hooks.js";
@@ -19,6 +19,25 @@ async function setStatus(m, ids, st) {
         if (!ids.includes(x.id)) return x;
         const { st: _old, ...rest } = x;
         return st ? { ...rest, st } : rest;
+      }),
+    },
+  }));
+}
+
+/**
+ * Delete questions from Suggestions for good (no undo). The bot's reply stays on the Conversations page, without the
+ * "missing knowledge" mark; questions from the old report have no reply there, so they are gone completely.
+ */
+async function remove(m, ids) {
+  await api("/api/log", { month: m, ids, del: true });
+  set((s) => ({
+    log: {
+      ...s.log,
+      [m]: (s.log[m] || []).flatMap((x) => {
+        if (!ids.includes(x.id)) return [x];
+        if (x.legacy) return [];
+        const { st: _old, ...rest } = x;
+        return [{ ...rest, gap: false }];
       }),
     },
   }));
@@ -55,13 +74,24 @@ export default function Suggestions() {
   };
   const fix = (x) => openImprove({ q: x.q, a: x.a, sources: x.src || [], fix: { month: m, ids: [x.id] } });
   const fixGroup = (g) => {
-    const open = g.ids.filter((id) => (get().log[m] || []).some((x) => x.id === id && !x.st));
+    const open = g.ids.filter((id) => (get().log[m] || []).some((x) => x.id === id && x.gap && !x.st));
     openImprove({ q: g.question, fix: { month: m, ids: open } });
   };
   const skip = async (x) => {
     await setStatus(m, [x.id], "dismissed");
     toast("Question dismissed");
   };
+  const del = async (x) => {
+    const text = x.legacy ? "It will be deleted for good." : "It will be removed from Suggestions for good. The bot's reply stays in Conversations.";
+    if (!(await confirmBox("Delete question?", `"${(x.q || "").slice(0, 80)}" ${text}`))) return;
+    await remove(m, [x.id]);
+    toast("Question deleted");
+  };
+  const delBtn = (x) => (
+    <button type="button" className="btn ghost sm danger" onClick={act(() => del(x))}>
+      Delete
+    </button>
+  );
   const row = (x, isDone) => (
     <div className="row conv" key={x.id}>
       <div className="when">
@@ -74,9 +104,12 @@ export default function Suggestions() {
       </div>
       <div className="acts">
         {isDone ? (
-          <Btn className="btn ghost sm" onClick={() => setStatus(m, [x.id], null)}>
-            Undo
-          </Btn>
+          <>
+            <Btn className="btn ghost sm" onClick={() => setStatus(m, [x.id], null)}>
+              Undo
+            </Btn>
+            {delBtn(x)}
+          </>
         ) : (
           <>
             <button type="button" className="btn sm pri" onClick={() => fix(x)}>
@@ -85,6 +118,7 @@ export default function Suggestions() {
             <Btn className="btn ghost sm" onClick={() => skip(x)}>
               Dismiss
             </Btn>
+            {delBtn(x)}
           </>
         )}
       </div>
@@ -93,7 +127,7 @@ export default function Suggestions() {
   const groupRows = groups
     ? groups
         .map((g, i) => {
-          const qs = g.ids.map((id) => byId[id]).filter((x) => x && !x.st);
+          const qs = g.ids.map((id) => byId[id]).filter((x) => x && x.gap && !x.st);
           if (!qs.length) return null;
           return (
             <div className="row" key={i}>
