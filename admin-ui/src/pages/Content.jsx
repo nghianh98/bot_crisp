@@ -268,7 +268,31 @@ function SnippetMode() {
 
 function SnippetRows({ q }) {
   const { S } = useStore();
+  const [sel, setSel] = useState(() => new Set()); // ids ticked for turning on / off together
   const list = S.snippets.filter((x) => matches(q, x.q, x.a)).sort((a, b) => (b.upd || 0) - (a.upd || 0));
+  const picked = S.snippets.filter((x) => sel.has(x.id)).map((x) => x.id); // ticks of deleted snippets don't count
+  const allShown = list.length > 0 && list.every((x) => sel.has(x.id));
+  const tick = (id) =>
+    setSel((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  // The box above the list ticks (or unticks) every snippet shown, so a search narrows what it selects
+  const tickShown = () =>
+    setSel((cur) => {
+      const next = new Set(cur);
+      for (const x of list) allShown ? next.delete(x.id) : next.add(x.id);
+      return next;
+    });
+  const turn = async (ids, on, undo) => {
+    const r = await api("/api/snippets", { op: "enable", ids, enabled: on });
+    setS({ snippets: r.snippets });
+    if (undo) return toast("Undone");
+    setSel(new Set());
+    if (!r.changed.length) return toast(`Those snippets were already ${on ? "on" : "off"}`);
+    toast(`${plural(r.changed.length, "snippet")} turned ${on ? "on" : "off"}`, { action: "Undo", onAction: act(() => turn(r.changed, !on, true)) });
+  };
   const toggle = async (x) => {
     const r = await api("/api/snippets", { op: "save", item: { ...x, enabled: !x.enabled } });
     setS({ snippets: r.snippets });
@@ -283,8 +307,9 @@ function SnippetRows({ q }) {
   if (!list.length) {
     return <div className="empty">{S.snippets.length ? "No snippets match." : "No snippets yet. A snippet is a ready answer for a question customers ask that the help center doesn't cover."}</div>;
   }
-  return list.map((x) => (
+  const rows = list.map((x) => (
     <div className="row" key={x.id}>
+      <input type="checkbox" className="pick" checked={sel.has(x.id)} onChange={() => tick(x.id)} aria-label={`Select "${x.q}"`} />
       <Switch on={x.enabled} label="The bot uses this snippet" onClick={() => toggle(x)} />
       <div className="grow">
         <button type="button" className="lk t" onClick={() => openSnippet(x.id)}>
@@ -311,6 +336,31 @@ function SnippetRows({ q }) {
       </div>
     </div>
   ));
+  return (
+    <>
+      <div className="row bulk">
+        <label className="chk">
+          <input type="checkbox" checked={allShown} onChange={tickShown} /> {picked.length ? `${n(picked.length)} selected` : `Select all ${n(list.length)}${q.trim() ? " shown" : ""}`}
+        </label>
+        {picked.length ? (
+          <div className="acts">
+            <Btn className="btn sm" onClick={() => turn(picked, true)}>
+              Turn on
+            </Btn>
+            <Btn className="btn sm" onClick={() => turn(picked, false)}>
+              Turn off
+            </Btn>
+            <button type="button" className="btn ghost sm" onClick={() => setSel(new Set())}>
+              Clear
+            </button>
+          </div>
+        ) : (
+          <span className="meta">Tick snippets to turn several on or off at once.</span>
+        )}
+      </div>
+      {rows}
+    </>
+  );
 }
 
 function ArticleRows({ src, q }) {

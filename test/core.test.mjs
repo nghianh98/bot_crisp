@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
-import { apiLogUpdate } from "../src/admin/api.js";
+import { apiLogUpdate, apiSettings, apiSnippets } from "../src/admin/api.js";
+import { localNow, parseBusinessHours, parseDaysOff, teamAvailabilityNote, teamStatus, tzLabel } from "../src/time.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
 import { freshTimestamp, getMessages, verifySignature } from "../src/crisp.js";
@@ -255,4 +256,99 @@ test("apiLogUpdate: delete removes a question from Suggestions for good, the rep
   await apiLogUpdate({ KB }, { month: "2026-11", ids: ["b"], st: "dismissed" });
   assert.equal(JSON.parse(KB.m.get("log:2026-11")).items[1].st, "dismissed");
   await assert.rejects(apiLogUpdate({ KB }, { month: "2026-11", ids: ["old"], del: true }), /not found/);
+});
+
+// The note the AI gets about working hours, as it was before days off existed: with no days off it must not change by a single character
+function oldAvailabilityNote(env, ms) {
+  const WD = { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday" };
+  const bh = parseBusinessHours(env.BUSINESS_HOURS);
+  if (!bh) return "";
+  const now = localNow(env, ms);
+  const inHours = bh.days.has(now.weekday) && now.minutes >= bh.open && now.minutes < bh.close;
+  const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+  const tz = tzLabel(env.UTC_OFFSET_HOURS);
+  if (inHours) return `Team support works ${env.BUSINESS_HOURS} (${tz}); it is within working hours now, so a teammate usually replies within a few hours.`;
+  let wait = 0;
+  let when = "";
+  for (let i = 0; i < 8; i++) {
+    const wd = ((now.weekday - 1 + i) % 7) + 1;
+    if (!bh.days.has(wd)) continue;
+    const startToday = i * 1440 + bh.open - now.minutes;
+    if (startToday > 0) {
+      wait = startToday;
+      when = i === 0 ? "today" : i === 1 ? `tomorrow (${WD[wd]})` : `on ${WD[wd]}`;
+      break;
+    }
+  }
+  const hours = Math.max(1, Math.round(wait / 60));
+  const at = `${when} at ${hhmm(bh.open)} ${tz}`;
+  const say = hours <= 3 ? `"${at}" or "in about ${hours} hour${hours > 1 ? "s" : ""}"` : `"${at}", not a number of hours`;
+  return `Team support works ${env.BUSINESS_HOURS} (${tz}). It is outside working hours now; the team is back ${at} (about ${hours} hour${hours > 1 ? "s" : ""} from now). Tell the customer this when you hand off: say ${say}.`;
+}
+
+test("working hours note: unchanged when there are no days off", () => {
+  const start = Date.UTC(2026, 10, 16); // a Monday
+  for (const BUSINESS_HOURS of ["Mon-Fri 08:00-24:00", "Mon-Sun 08:00-24:00", "Mon-Sat 09:00-18:30", "Wed 10:00-12:00", "Tue,Thu,Sun 00:00-24:00", ""]) {
+    for (const UTC_OFFSET_HOURS of ["7", "0", "-5", "5.5"]) {
+      const e = { BUSINESS_HOURS, UTC_OFFSET_HOURS };
+      for (let h = 0; h < 9 * 24; h += 1.5) {
+        const ms = start + h * 3600000;
+        assert.equal(teamAvailabilityNote(e, ms), oldAvailabilityNote(e, ms), `${BUSINESS_HOURS} ${UTC_OFFSET_HOURS} +${h}h`);
+        // Days off that are already over don't change anything either
+        assert.equal(teamAvailabilityNote({ ...e, DAYS_OFF: "2026-11-01,2026-11-10" }, ms), oldAvailabilityNote(e, ms));
+      }
+    }
+  }
+});
+
+test("days off: the team is off all day and the bot skips them when saying when the team is back", () => {
+  assert.deepEqual(parseDaysOff(" 2026-12-25, 2026-12-24,2026-12-25 "), ["2026-12-24", "2026-12-25"]);
+  assert.deepEqual(parseDaysOff(""), []);
+  for (const bad of ["tomorrow", "2026-02-30", "2026-1-5", "24/12/2026", Array.from({ length: 61 }, (_, i) => `2027-${String(1 + Math.floor(i / 28)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")}`).join(",")]) assert.equal(parseDaysOff(bad), null, bad);
+
+  const e = { BUSINESS_HOURS: "Mon-Fri 08:00-24:00", UTC_OFFSET_HOURS: "7" };
+  const at = (date, hhmm) => Date.parse(`${date}T${hhmm}:00+07:00`);
+  // A normal Tuesday morning: open
+  assert.deepEqual(teamStatus(e, at("2026-11-24", "10:00")), { open: true });
+  // The same moment with that Tuesday marked as a day off
+  const off = { ...e, DAYS_OFF: "2026-11-24" };
+  assert.deepEqual(teamStatus(off, at("2026-11-24", "10:00")), { open: false, dayOff: true, wait: 22 * 60, at: "tomorrow (Wednesday) at 08:00 GMT+7" });
+  const note = teamAvailabilityNote(off, at("2026-11-24", "10:00"));
+  assert.match(note, /The team has a day off today, so it is outside working hours now; the team is back tomorrow \(Wednesday\) at 08:00 GMT\+7 \(about 22 hours from now\)/);
+  // The evening before a day off: back the day after it, not "tomorrow"
+  assert.equal(teamStatus({ ...e, BUSINESS_HOURS: "Mon-Fri 08:00-18:00", DAYS_OFF: "2026-11-24" }, at("2026-11-23", "19:00")).at, "on Wednesday at 08:00 GMT+7");
+  // Thursday and Friday off, then the weekend: back on Monday
+  const long = { ...e, DAYS_OFF: "2026-11-26,2026-11-27" };
+  assert.equal(teamStatus(long, at("2026-11-26", "09:00")).at, "on Monday at 08:00 GMT+7");
+  assert.equal(teamStatus(long, at("2026-11-28", "09:00")).dayOff, false); // Saturday is a normal day off, not a "day off"
+  // A break of a week or more: the date is included, because "on Monday" alone would be unclear
+  const days = Array.from({ length: 9 }, (_, i) => `2026-12-${String(21 + i).padStart(2, "0")}`).join(","); // 21 to 29 December
+  assert.equal(teamStatus({ ...e, DAYS_OFF: days }, at("2026-12-21", "09:00")).at, "on Wednesday, 30 December at 08:00 GMT+7");
+  // The day off is over at midnight in the team's time zone
+  assert.deepEqual(teamStatus(off, at("2026-11-25", "08:00")), { open: true });
+});
+
+test("snippets: turn many on or off in one go", async () => {
+  const sn = (id, enabled) => ({ id, q: `Q ${id}`, a: `A ${id}`, enabled, src: "manual", at: 1, upd: 1, by: "Chloe" });
+  const KB = fakeKV({ "cfg:snippets": JSON.stringify([sn("sn_aaa", true), sn("sn_bbb", true), sn("sn_ccc", false)]) });
+  const env = { KB };
+  const r = await apiSnippets(env, { op: "enable", ids: ["sn_aaa", "sn_bbb", "sn_ccc"], enabled: false }, "Linh");
+  assert.deepEqual(r.changed, ["sn_aaa", "sn_bbb"]); // the third one was already off
+  assert.deepEqual(r.snippets.map((s) => [s.id, s.enabled, s.by]), [["sn_aaa", false, "Linh"], ["sn_bbb", false, "Linh"], ["sn_ccc", false, "Chloe"]]);
+  assert.equal(JSON.parse(KB.m.get("cfg:changelog")).at(-1).what, "Turned off 2 snippets");
+  const back = await apiSnippets(env, { op: "enable", ids: r.changed, enabled: true }, "Linh"); // what Undo sends
+  assert.deepEqual(back.snippets.map((s) => s.enabled), [true, true, false]);
+  await assert.rejects(apiSnippets(env, { op: "enable", ids: [], enabled: true }, "Linh"), /Select at least one/);
+  await assert.rejects(apiSnippets(env, { op: "enable", ids: ["sn_zzz"], enabled: true }, "Linh"), /not found/);
+});
+
+test("settings: days off are saved and checked", async () => {
+  const KB = fakeKV({ "cfg:settings": JSON.stringify({ v: 4, botName: "Bot" }) });
+  const env = await withConfig({ KB });
+  await apiSettings(env, { settings: { daysOff: "2026-12-24,2026-12-25" } }, "Linh");
+  assert.equal(JSON.parse(KB.m.get("cfg:settings")).daysOff, "2026-12-24,2026-12-25");
+  assert.equal((await withConfig({ KB })).DAYS_OFF, "2026-12-24,2026-12-25");
+  await assert.rejects(apiSettings(env, { settings: { daysOff: "next friday" } }, "Linh"), /Days off/);
+  await apiSettings(env, { settings: { daysOff: "" } }, "Linh");
+  assert.equal(JSON.parse(KB.m.get("cfg:settings")).daysOff, "");
 });

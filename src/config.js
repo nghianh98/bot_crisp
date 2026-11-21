@@ -2,7 +2,7 @@
 // Giá trị mặc định và cài đặt của bot. Cài đặt lưu trên trang /admin đè lên biến đặt ở Cloudflare.
 import { SETTINGS_VERSION, upgradeSettings } from "./compat.js";
 import { normTags } from "./tags.js";
-import { parseBusinessHours } from "./time.js";
+import { parseBusinessHours, parseDaysOff } from "./time.js";
 import { clip, getJSON, num, uid } from "./util.js";
 
 export const DEFAULTS = {
@@ -14,6 +14,7 @@ export const DEFAULTS = {
   BOT_MODE: "offline",
   BOT_LANGUAGE: "English",
   BUSINESS_HOURS: "",
+  DAYS_OFF: "", // ngày nghỉ của team (YYYY-MM-DD, cách nhau bằng dấu phẩy): chọn trên /admin → Settings
   UTC_OFFSET_HOURS: "0", // múi giờ của team (giờ lệch so với GMT): chọn trên /admin → Settings
   OPENAI_MODEL: "gpt-6-luna",
   OPENAI_REASONING_EFFORT: "low",
@@ -143,6 +144,7 @@ export const WAITING_DEFAULT = `Reply to what the customer's latest message actu
 - More details for their issue (a screenshot, a link, what they tried): thank them in one short sentence and say the team will see it.
 Never repeat what you already told them in this conversation (for example that the team has their case, or when the team will reply) unless they ask about it again.`;
 export const MAX_RULE_CHARS = 3000;
+export const MAX_DAYS_OFF = 60; // số ngày nghỉ (Settings → Days off) lưu được
 
 export const ESCALATION_DEFAULT = {
   triggers: { askHuman: true, billing: true, angry: true, bug: true, noAnswer: true, sensitive: true, promises: true },
@@ -204,6 +206,7 @@ export const SETTINGS_FIELDS = {
   language: { env: "BOT_LANGUAGE", label: "Reply language", max: 30, required: true },
   snippetMode: { env: "SNIPPET_MODE", label: "How snippets are used", values: ["knowledge", "exact"] },
   businessHours: { env: "BUSINESS_HOURS", label: "Working hours", max: 80, check: (v) => !v || !!parseBusinessHours(v), error: "Working hours format is invalid (example: Mon-Sun 08:00-24:00)" },
+  daysOff: { env: "DAYS_OFF", label: "Days off", max: 11 * MAX_DAYS_OFF + 40, check: (v) => parseDaysOff(v) !== null, error: `Days off: dates like 2026-12-24, up to ${MAX_DAYS_OFF} of them` },
   utcOffset: { env: "UTC_OFFSET_HOURS", label: "Time zone", values: UTC_OFFSETS },
   supportEmail: { env: "SUPPORT_EMAIL", label: "Support email", max: 120, check: (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), error: "That email address isn't valid" },
   model: { env: "OPENAI_MODEL", label: "AI model", max: 60, required: true },

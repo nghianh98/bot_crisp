@@ -45,6 +45,25 @@ export function buildBH(days, open, close) {
   return `${parts.join(",")} ${open}-${close}`;
 }
 
+/** Today's date (YYYY-MM-DD) in the team's time zone, `add` days from now */
+const teamDate = (offset, add = 0) => new Date(Date.now() + (Number(offset) || 0) * 3600000 + add * 86400000).toISOString().slice(0, 10);
+const DAY = 86400000;
+const dateMs = (date) => Date.parse(`${date}T00:00:00Z`);
+/** "2026-12-24" → "Thu 24 Dec" */
+const dayLabel = (date) => new Date(dateMs(date)).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).replace(",", "");
+/** Saved days off ("2026-12-24,2026-12-25") that aren't over yet, oldest first */
+const upcomingOff = (saved, offset) => [...new Set(String(saved || "").split(",").map((x) => x.trim()))].filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x) && x >= teamDate(offset)).sort();
+/** Dates next to each other become one stretch: ["…-24", "…-25", "…-28"] → [["…-24", "…-25"], ["…-28"]] */
+function stretches(dates) {
+  const out = [];
+  for (const x of dates) {
+    const last = out.at(-1);
+    if (last && dateMs(x) - dateMs(last.at(-1)) === DAY) last.push(x);
+    else out.push([x]);
+  }
+  return out;
+}
+
 /** What is saved → what the page edits until Save settings */
 function draftOf(S) {
   const s = S.settings;
@@ -56,6 +75,7 @@ function draftOf(S) {
     days: [...bh.days],
     open: pick(TIMES, bh.open),
     close: pick(TIMES, bh.close),
+    daysOff: upcomingOff(s.daysOff, s.utcOffset),
     utcOffset: pick(S.meta.utcOffsets, String(s.utcOffset)),
     supportEmail: s.supportEmail,
     product: s.product === "our product" ? "" : s.product,
@@ -224,6 +244,7 @@ export default function Settings() {
   const s = S.settings;
   const [d, setD] = useState(() => draftOf(S));
   const [key, setKey] = useState("");
+  const [off, setOff] = useState({ from: "", to: "" }); // the dates being added under Days off
   const hook = useRef(null);
   const file = useRef(null);
   const up = (k) => (e) => setD((cur) => ({ ...cur, [k]: e.target.value }));
@@ -245,6 +266,26 @@ export default function Settings() {
     </select>
   );
   const toggleDay = (i) => setD((cur) => ({ ...cur, days: cur.days.includes(i) ? cur.days.filter((x) => x !== i) : [...cur.days, i] }));
+  // Days off: whole dates the team doesn't work (a holiday, a sudden day off). Kept in the draft until Save settings, like the rest.
+  const today = teamDate(d.utcOffset);
+  const addOff = (dates) => {
+    const next = [...new Set([...d.daysOff, ...dates])].filter((x) => x >= today).sort();
+    if (next.length > S.meta.maxDaysOff) throw new Error(`Up to ${S.meta.maxDaysOff} days off. Remove some first.`);
+    setD((cur) => ({ ...cur, daysOff: next }));
+  };
+  const addRange = () => {
+    if (!off.from) throw new Error("Pick the date first");
+    const end = off.to > off.from ? off.to : off.from;
+    const dates = [];
+    for (let ms = dateMs(off.from); ms <= dateMs(end) && dates.length <= S.meta.maxDaysOff; ms += DAY) dates.push(new Date(ms).toISOString().slice(0, 10));
+    addOff(dates);
+    setOff({ from: "", to: "" });
+  };
+  const dropOff = (dates) => setD((cur) => ({ ...cur, daysOff: cur.daysOff.filter((x) => !dates.includes(x)) }));
+  // What the bot is telling customers right now. It follows the SAVED settings, so it is hidden while there are unsaved changes here.
+  const team = S.team;
+  const savedDraft = draftOf(S);
+  const hoursSaved = ["days", "open", "close", "daysOff", "utcOffset"].every((k) => JSON.stringify(d[k]) === JSON.stringify(savedDraft[k]));
 
   const saveKey = async () => {
     const k = key.trim();
@@ -262,6 +303,7 @@ export default function Settings() {
       language: d.language,
       mode: d.mode,
       businessHours: bh,
+      daysOff: d.daysOff.filter((x) => x >= today).join(","),
       utcOffset: d.utcOffset,
       supportEmail: d.supportEmail.trim(),
       product: d.product.trim(),
@@ -409,9 +451,65 @@ export default function Settings() {
               <div className="times">
                 From {timeSel("bo", "open")} to {timeSel("bc", "close")}
               </div>
-              <p className="meta" id="bhx">
-                {bh ? `Saved as: ${bh}` : "No days selected: the bot won't tell customers your working hours."}
+              {!bh ? (
+                <p className="meta" id="bhx">
+                  No days selected: the bot won't tell customers your working hours.
+                </p>
+              ) : !hoursSaved ? (
+                <p className="meta" id="bhx">
+                  Save settings to see what the bot tells customers now.
+                </p>
+              ) : team ? (
+                <p className="teamnow" id="bhx">
+                  <span className={`dot${team.open ? "" : " off"}`} aria-hidden="true" />
+                  {team.open ? "Right now: within working hours." : `Right now: ${team.dayOff ? "day off" : "outside working hours"}. The bot tells customers the team is back ${team.at}.`}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="fr">
+            <div className="lb">
+              Days off<small>Dates the team doesn't work, like a public holiday or a sudden day off. On those dates the bot treats the whole day as outside working hours. Past dates remove themselves.</small>
+              {src("daysOff")}
+            </div>
+            <div>
+              <div className="times" style={{ marginTop: 0 }}>
+                <button type="button" className="btn" disabled={d.daysOff.includes(today)} onClick={act(() => addOff([today]))}>
+                  Off today
+                </button>
+                <button type="button" className="btn" disabled={d.daysOff.includes(teamDate(d.utcOffset, 1))} onClick={act(() => addOff([teamDate(d.utcOffset, 1)]))}>
+                  Off tomorrow
+                </button>
+              </div>
+              <div className="times">
+                <label htmlFor="dof">Other dates: from</label>
+                <input className="in" type="date" id="dof" style={{ width: "auto" }} min={today} value={off.from} onChange={(e) => setOff({ ...off, from: e.target.value })} />
+                <label htmlFor="dot">to</label>
+                <input className="in" type="date" id="dot" style={{ width: "auto" }} min={off.from || today} value={off.to} onChange={(e) => setOff({ ...off, to: e.target.value })} aria-describedby="doth" />
+                <button type="button" className="btn" onClick={act(addRange)}>
+                  Add
+                </button>
+              </div>
+              <p className="meta" id="doth">
+                Leave "to" empty for a single day.
               </p>
+              {d.daysOff.length ? (
+                <div className="offs" id="offs">
+                  {stretches(d.daysOff).map((g) => (
+                    <span className="chip" key={g[0]}>
+                      {g.length > 1 ? `${dayLabel(g[0])} to ${dayLabel(g.at(-1))} (${g.length} days)` : dayLabel(g[0])}
+                      {g.includes(today) ? " · today" : ""}
+                      <button type="button" onClick={() => dropOff(g)} aria-label={`Remove ${g.length > 1 ? `${dayLabel(g[0])} to ${dayLabel(g.at(-1))}` : dayLabel(g[0])}`}>
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="meta" id="offs">
+                  No days off planned.
+                </p>
+              )}
             </div>
           </div>
           <div className="fr">

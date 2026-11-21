@@ -4,12 +4,12 @@ import { isAdmin, whoOf } from "./auth.js";
 import { callOpenAI, generateReply, listModels, productLine } from "../ai.js";
 import { handoffNote } from "../handoff.js";
 import { cleanCustomer } from "../crisp.js";
-import { AI_KEY, FOLLOWUP_DEFAULT, GUIDANCE_CATS, MAX_CUSTOM_REASONS, MAX_FIELDS, MAX_RULE_CHARS, MAX_TAGS, MAX_TEST_QUESTIONS, MODE_LABELS, PRIORITY_DEFAULT, PRIORITY_LEVELS, QUEUE, SETTINGS_FIELDS, SETTINGS_VERSION, TRIGGERS, UPSET_DEFAULT, URGENT_DEFAULT, UTC_OFFSETS, WAITING_DEFAULT, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, normQuestions, upgradeSettings, withAiKey, withConfig } from "../config.js";
+import { AI_KEY, FOLLOWUP_DEFAULT, GUIDANCE_CATS, MAX_CUSTOM_REASONS, MAX_DAYS_OFF, MAX_FIELDS, MAX_RULE_CHARS, MAX_TAGS, MAX_TEST_QUESTIONS, MODE_LABELS, PRIORITY_DEFAULT, PRIORITY_LEVELS, QUEUE, SETTINGS_FIELDS, SETTINGS_VERSION, TRIGGERS, UPSET_DEFAULT, URGENT_DEFAULT, UTC_OFFSETS, WAITING_DEFAULT, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, normQuestions, upgradeSettings, withAiKey, withConfig } from "../config.js";
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, selectorError, stepSync, storePage } from "../knowledge.js";
 import { logChange, normMonth, readLog } from "../stats.js";
 import { cleanTag, normTags, tagSlug } from "../tags.js";
 import { DEFAULT_RULES, MAX_EXAMPLES, MAX_RULES_CHARS, MAX_STYLE_CHARS, STYLE_KEY, cleanExample, cleanRules, getStyle, normStyle } from "../style.js";
-import { localNow } from "../time.js";
+import { localNow, teamStatus } from "../time.js";
 import { cleanGuidance, cleanSnippet, legacyTraining, parseFaq } from "../training.js";
 import { UserError, bad, clip, getJSON, json, putJSON } from "../util.js";
 
@@ -58,7 +58,8 @@ export function settingsView(env) {
     settings[k] = k === "mode" ? currentMode(env) : k === "effort" ? effortLevel(env) : cfg(env, f.env);
     sources[k] = env.__saved?.[k] != null && env.__saved[k] !== "" ? "admin" : env.__orig?.[f.env] ? "cloudflare" : "default";
   }
-  return { settings, sources, escalation: env.__esc, followup: env.__fu, testQuestions: env.__test, ai: env.__aiKey };
+  // team: team đang làm hay nghỉ theo cài đặt ĐÃ LƯU, và bot đang báo khách team quay lại lúc nào (Settings hiện cho team kiểm tra)
+  return { settings, sources, escalation: env.__esc, followup: env.__fu, testQuestions: env.__test, ai: env.__aiKey, team: teamStatus(env) };
 }
 
 const syncView = (st) => ({
@@ -141,6 +142,7 @@ export async function apiState(env, url, who) {
       modes: MODE_LABELS,
       maxTags: MAX_TAGS,
       utcOffset: Number(cfg(env, "UTC_OFFSET_HOURS")),
+      maxDaysOff: MAX_DAYS_OFF,
     },
   };
 }
@@ -367,6 +369,7 @@ export async function apiStyle(env, body, who) {
 export async function apiSnippets(env, body, who) {
   let items = (await getJSON(env, "cfg:snippets")) ?? (await legacyTraining(env)).snippets;
   let saved = null;
+  let changed; // op "enable": id các snippet thật sự đổi trạng thái
   if (body.op === "save") {
     const prev = items.find((s) => s.id === body.item?.id);
     const item = cleanSnippet({ ...body.item, id: prev?.id, src: prev?.src || body.item?.src }, who, prev);
@@ -384,6 +387,17 @@ export async function apiSnippets(env, body, who) {
     if (!prev) bad("Snippet not found");
     items = items.filter((s) => s.id !== body.id);
     await logChange(env, who, `Deleted snippet "${prev.q}"`);
+  } else if (body.op === "enable") {
+    // Bật / tắt nhiều snippet một lần: ghi KV một lần, một dòng trong Change log
+    const ids = new Set((Array.isArray(body.ids) ? body.ids : []).filter((x) => typeof x === "string"));
+    const on = body.enabled === true;
+    if (!ids.size) bad("Select at least one snippet");
+    if (!items.some((s) => ids.has(s.id))) bad("Snippet not found. Reload the page.");
+    const hit = items.filter((s) => ids.has(s.id) && s.enabled !== on);
+    const now = Date.now();
+    for (const s of hit) Object.assign(s, { enabled: on, upd: now, by: clip(who, 40) || s.by });
+    changed = hit.map((s) => s.id);
+    if (hit.length) await logChange(env, who, hit.length === 1 ? `${on ? "Turned on" : "Turned off"} snippet "${hit[0].q}"` : `${on ? "Turned on" : "Turned off"} ${hit.length} snippets`);
   } else if (body.op === "import") {
     const added = parseFaq(body.text || "", "import", who);
     if (!added.length) bad("No question and answer pairs found. Write each pair as Q: … then A: …, with a blank line between pairs.");
@@ -396,7 +410,7 @@ export async function apiSnippets(env, body, who) {
   await putJSON(env, "cfg:snippets", items);
   const fixIds = [].concat(body.fixLog?.ids || [], body.fixLog?.id || []).filter((x) => typeof x === "string");
   if (saved && fixIds.length) await apiLogUpdate(env, { month: body.fixLog.month, ids: fixIds, st: "fixed" }).catch(() => {});
-  return { snippets: items, saved };
+  return { snippets: items, saved, changed };
 }
 
 export async function apiKb(env, body, who) {
@@ -631,7 +645,7 @@ export async function apiExport(env) {
    guidance, style, snippets, tags = đúng tên trang */
 export const RESTORE_SECTIONS = {
   product: { label: "Product and knowledge sources", fields: ["product", "productDesc", "helpUrl", "helpSections", "helpPages", "helpSelector", "supportEmail"] },
-  bot: { label: "Bot settings", fields: ["botName", "language", "snippetMode", "mode", "businessHours", "utcOffset", "model", "effort"] },
+  bot: { label: "Bot settings", fields: ["botName", "language", "snippetMode", "mode", "businessHours", "daysOff", "utcOffset", "model", "effort"] },
   escalation: { label: "Escalation and follow-up", fields: [] },
   guidance: { label: "Guidance", fields: [] },
   style: { label: "Writing style", fields: [] },

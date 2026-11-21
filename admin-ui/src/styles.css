@@ -116,6 +116,12 @@ nav a[aria-current="page"] { background: var(--blues); color: var(--blue2); font
 .sw[aria-checked="true"] { background: var(--blue); }
 .sw[aria-checked="true"]::after { left: 18px; }
 .sw[disabled] { opacity: 0.45; cursor: default; }
+/* Ticking several rows of a list for one action (Knowledge → Snippets) */
+.row .pick { flex: none; width: 16px; height: 16px; margin: 4px 0 0; accent-color: var(--blue); cursor: pointer; }
+.row.bulk { align-items: center; padding-top: 10px; padding-bottom: 10px; }
+.row.bulk .chk { margin: 0; font-weight: 600; font-size: 13.5px; align-items: center; flex: 1; min-width: 0; }
+.row.bulk .chk input { margin: 0; width: 16px; height: 16px; }
+.row.bulk .meta { margin: 0; }
 
 .in { width: 100%; padding: 8px 10px; border: 1px solid #cdd3df; border-radius: 8px; background: #fff; }
 textarea.in { resize: vertical; min-height: 84px; line-height: 1.5; }
@@ -148,6 +154,14 @@ select.in { padding-right: 28px; }
 .days input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
 .times { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .times select { width: auto; }
+.times label { color: var(--ink2); }
+/* Settings → Working hours: what the bot says now, and the days off as removable chips */
+.teamnow { display: flex; gap: 8px; align-items: baseline; margin: 12px 0 0; font-size: 13.5px; color: var(--ink2); }
+.teamnow .dot { position: relative; top: -1px; }
+.offs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.offs .chip { gap: 6px; padding: 3px 4px 3px 10px; font-size: 13px; }
+.offs .chip button { border: 0; background: none; color: var(--ink3); cursor: pointer; padding: 0 4px; font-size: 12px; line-height: 1; border-radius: 6px; }
+.offs .chip button:hover { color: var(--red); background: var(--reds); }
 .copy { display: flex; gap: 8px; }
 .copy .in { font-size: 13px; background: var(--bg); }
 .savebar { position: sticky; bottom: 16px; z-index: 5; margin-top: 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 12px 10px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 6px 20px rgba(22, 33, 58, 0.08); }

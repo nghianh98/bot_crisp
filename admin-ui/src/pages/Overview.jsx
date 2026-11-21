@@ -13,7 +13,7 @@ const MODE_SENTENCE = {
 
 function statusSentence(S) {
 	const s = S.settings;
-	return `${MODE_SENTENCE[s.mode]} ${s.businessHours ? `Team working hours: ${s.businessHours} (${tzLabel(S.meta.utcOffset)}).` : "Working hours aren't set."}`;
+	return `${MODE_SENTENCE[s.mode]} ${s.businessHours ? `Team working hours: ${s.businessHours} (${tzLabel(S.meta.utcOffset)}).${S.team?.dayOff ? " Today is a day off for the team." : ""}` : "Working hours aren't set."}`;
 }
 
 function todos(S, a) {
