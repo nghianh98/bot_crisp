@@ -44,8 +44,9 @@
   // Giữ biến đặt trên dashboard khi deploy (chỉ giữ được biến có trong bản upload gần nhất).
   // Khoá bí mật (CRISP_*, ADMIN_KEY…) hãy đặt dạng Secret: deploy không bao giờ xoá secret.
   "keep_vars": true,
+  // Giờ làm việc không đặt ở đây nữa: team chọn trên /admin → Settings → Working hours (lưu trong KV).
+  // Biến BUSINESS_HOURS cũ đã xoá trên dashboard ngày 21/11/2026; để lại ở đây thì mỗi lần deploy nó lại được tạo ra.
   "vars": {
-    "BUSINESS_HOURS": "Mon-Sun 08:00-24:00",
     "SUPPORT_EMAIL": "support@transtore.app"
   },
   // Mỗi hội thoại 1 Durable Object lo việc trả lời khách (src/conversation.js): không bị giới hạn 30 giây sau webhook,
