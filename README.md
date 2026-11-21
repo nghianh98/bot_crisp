@@ -160,7 +160,7 @@ npx wrangler secret put ADMIN_KEY -c wrangler.myapp.jsonc
 - Knowledge → Sync now. Help center không có sitemap thì dán link bài vào Settings → Help center pages.
 - Escalation: thông tin cần hỏi khách, định nghĩa P1–P4, lý do chuyển người riêng của app.
 
-**7. Đem cách làm việc từ bot cũ sang (tuỳ chọn).** Ở bot cũ: Settings → Download backup. Ở bot mới: Settings → Restore from file, bỏ tick **Product and knowledge sources** và **Snippets** để chỉ lấy guidance, văn phong, escalation.
+**7. Đem cách làm việc từ bot cũ sang (tuỳ chọn).** Ở bot cũ: Settings → Download backup. Ở bot mới: Settings → Restore from file, tick mọi phần trừ **Product and knowledge sources** và **Snippets** để chỉ lấy guidance, văn phong, escalation. (Hộp Restore không tick sẵn phần nào: phần nào được tick sẽ ghi đè lên dữ liệu bot đang có.)
 
 **8. Thử rồi bật.** Hỏi vài câu trong Test the bot, sau đó chọn Bot mode.
 

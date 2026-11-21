@@ -162,11 +162,13 @@ function ModelBox({ value, onChange }) {
 
 function RestoreDialog({ data }) {
   const parts = get().S.meta.restoreSections;
-  const [ticked, setTicked] = useState(() => Object.keys(parts));
+  const all = Object.keys(parts);
+  // Nothing is ticked at first: a ticked part replaces what the bot has now, so restoring each part is a choice
+  const [ticked, setTicked] = useState([]);
   const when = data.exportedAt ? fmtTime(Date.parse(data.exportedAt)) : "an unknown date";
   const go = async () => {
     if (!ticked.length) throw new Error("Tick at least one part");
-    await api("/api/import", { data, sections: Object.keys(parts).filter((k) => ticked.includes(k)) });
+    await api("/api/import", { data, sections: all.filter((k) => ticked.includes(k)) });
     closeModal();
     toast("Restored. Reloading…");
     setTimeout(() => location.reload(), 900);
@@ -179,15 +181,18 @@ function RestoreDialog({ data }) {
           <button className="btn" value="close">
             Cancel
           </button>
-          <Btn className="btn pri danger" onClick={go}>
+          <Btn className="btn pri danger" disabled={!ticked.length} onClick={go}>
             Restore
           </Btn>
         </>
       }
     >
       <p style={{ margin: "0 0 12px" }}>
-        Backup from {when}. Choose what to restore. Each ticked part <b>replaces</b> what this bot has now; unticked parts stay as they are.
+        Backup from {when}. Tick the parts to restore. Each ticked part <b>replaces</b> what this bot has now; unticked parts stay as they are.
       </p>
+      <button type="button" className="btn sm" onClick={() => setTicked(ticked.length === all.length ? [] : all)}>
+        {ticked.length === all.length ? "Untick all" : "Tick all"}
+      </button>
       <div className="checks" id="impParts" style={{ gridTemplateColumns: "1fr" }}>
         {Object.entries(parts).map(([k, label]) => (
           <label className="chk" key={k}>
@@ -195,7 +200,7 @@ function RestoreDialog({ data }) {
           </label>
         ))}
       </div>
-      <p className="note">Setting up a bot for another product? Untick "Product and knowledge sources" and "Snippets" to bring over only how the bot behaves. Download a backup of the current setup first.</p>
+      <p className="note">Setting up a bot for another product? Tick everything except "Product and knowledge sources" and "Snippets" to bring over only how the bot behaves. Download a backup of the current setup first.</p>
     </Modal>
   );
 }
