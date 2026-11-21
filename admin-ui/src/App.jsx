@@ -194,6 +194,21 @@ export default function App() {
     return () => document.removeEventListener("keydown", key);
   }, []);
 
+  // The floating Test button sits above a page's sticky save bar, not on top of its Save button
+  useEffect(() => {
+    const root = document.documentElement;
+    const bar = document.querySelector(".savebar");
+    if (!bar) return;
+    const lift = () => root.style.setProperty("--fab-lift", `${bar.offsetHeight + 12}px`);
+    lift();
+    const watch = typeof ResizeObserver === "function" ? new ResizeObserver(lift) : null;
+    watch?.observe(bar);
+    return () => {
+      watch?.disconnect();
+      root.style.removeProperty("--fab-lift");
+    };
+  }, [route.name, !!S]);
+
   const dock = !!S && TRAIN.has(route.name);
   const docked = dock && wide; // the Test panel sits beside the page instead of sliding over it
   const Page = PAGES[route.name];
@@ -237,11 +252,13 @@ export default function App() {
         <Preview />
       </div>
 
-      <button className="fab" id="fab" type="button" onClick={pvOpen}>
+      <button className="fab" id="fab" type="button" aria-label="Test the bot" onClick={pvOpen}>
         <span className="av" aria-hidden="true">
           {initial}
         </span>
-        Test the bot
+        <span>
+          Test<span className="hide-sm"> the bot</span>
+        </span>
       </button>
       <div className={`scrim${(P.open && !docked) || side ? " on" : ""}`} id="scrim" onClick={closeOverlays} />
       <ModalHost />

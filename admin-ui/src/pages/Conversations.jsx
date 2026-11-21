@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Chips, MonthNav, crispUrl } from "../components/common.jsx";
 import { openImprove } from "../components/Snippet.jsx";
-import { Btn, Header, Modal, closeModal, confirmBox, openModal } from "../components/ui.jsx";
+import { Btn, Header, Modal, More, closeModal, confirmBox, openModal } from "../components/ui.jsx";
 import { api } from "../lib/api.js";
 import { fmtClock, fmtDay, matches, monthLabel, n, plural } from "../lib/format.js";
 import { useLog } from "../lib/hooks.js";
@@ -97,14 +97,16 @@ function ConvRow({ x, month, picked, onPick, others }) {
         <button type="button" className="btn sm" onClick={() => openImprove({ q: x.q, a: x.a, sources: x.src || [], fix: { month, ids: [x.id] } })}>
           Improve
         </button>
-        {x.w && x.sid ? (
-          <a className="btn ghost sm" href={crispUrl(x)} target="_blank" rel="noopener">
-            Open in Crisp
-          </a>
-        ) : null}
-        <button type="button" className="btn ghost sm danger" onClick={() => openModal(<DeleteDialog x={x} month={month} others={others} />)}>
-          Delete
-        </button>
+        <More label="More actions for this reply">
+          {x.w && x.sid ? (
+            <a href={crispUrl(x)} target="_blank" rel="noopener">
+              Open in Crisp
+            </a>
+          ) : null}
+          <button type="button" className="danger" onClick={() => openModal(<DeleteDialog x={x} month={month} others={others} />)}>
+            Delete
+          </button>
+        </More>
       </div>
     </div>
   );

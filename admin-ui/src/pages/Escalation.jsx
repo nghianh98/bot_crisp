@@ -1,7 +1,7 @@
 // Escalation: when to hand off to the team, what to ask first, how to rate priority, what the bot does while the customer waits.
 // Everything here is the team's own wording: the code only supplies neutral starting text.
 import { useRef, useState } from "react";
-import { Btn, Header, Switch } from "../components/ui.jsx";
+import { AutoText, Btn, Header, Switch } from "../components/ui.jsx";
 import { api } from "../lib/api.js";
 import { pick } from "../lib/format.js";
 import { setS, useStore } from "../lib/store.js";
@@ -93,10 +93,10 @@ export default function Escalation() {
         <div className="row li" key={x.uid}>
           <Switch on={x.enabled} label="Use this line" onClick={() => setLine(list, x.uid, { enabled: !x.enabled })} />
           <div className="grow">
-            <input
-              className="in"
+            <AutoText
+              oneLine
               value={x.text}
-              onChange={(e) => setLine(list, x.uid, { text: e.target.value })}
+              onChange={(e) => setLine(list, x.uid, { text: e.target.value.replace(/\s*\n\s*/g, " ") })}
               maxLength={300}
               placeholder={PLACEHOLDER[list]}
               aria-label={PLACEHOLDER[list]}

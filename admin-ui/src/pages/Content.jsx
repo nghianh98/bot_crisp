@@ -231,6 +231,12 @@ async function kbOp(body, done) {
 }
 
 // How the bot uses snippets: as knowledge (it writes its own reply) or sent word for word
+// What each choice of "How the bot uses snippets" does (shown under the choice)
+const SNIP_MODE = {
+  knowledge: "The bot writes its own reply from the snippets and the help center, for the exact question asked, following your writing style. You can still mark single snippets to be sent as written.",
+  exact: "When a question matches a snippet, its answer is sent word for word, whatever your writing style says. A question that only loosely matches gets the same ready-made answer.",
+};
+
 function SnippetMode() {
   const { S } = useStore();
   const [picked, setPicked] = useState(null); // the choice being saved
@@ -245,23 +251,26 @@ function SnippetMode() {
     }
     setPicked(null);
   };
-  const opt = (v, title, desc) => (
-    <label className="radio">
-      <input type="radio" name="snipMode" value={v} checked={mode === v} onChange={() => choose(v)} />
-      <div>
-        <b>{title}</b>
-        <span>{desc}</span>
-      </div>
+  const opt = (v, title) => (
+    <label>
+      <input type="radio" name="snipMode" value={v} checked={mode === v} disabled={picked != null} onChange={() => choose(v)} />
+      <span>{title}</span>
     </label>
   );
   return (
     <div className="snipmode">
-      <p className="t">How the bot uses snippets</p>
-      <div className="radios">
-        {opt("knowledge", "As knowledge", "The bot writes its own reply from the snippets and the help center, for the exact question asked, following your writing style. You can still mark single snippets to be sent as written.")}
-        {opt("exact", "Exactly as written", "When a question matches a snippet, its answer is sent word for word, whatever your writing style says. A question that only loosely matches gets the same ready-made answer.")}
+      <div className="sm-h">
+        <p className="t" id="snipModeLabel">
+          How the bot uses snippets
+        </p>
+        <div className="seg" role="radiogroup" aria-labelledby="snipModeLabel">
+          {opt("knowledge", "As knowledge")}
+          {opt("exact", "Exactly as written")}
+        </div>
       </div>
-      <p className="note">Compare both without changing the live bot: pick one under "Snippets" in Test the bot.</p>
+      <p className="note">
+        {SNIP_MODE[mode]} Compare both without changing the live bot: pick one under "Snippets" in Test the bot.
+      </p>
     </div>
   );
 }

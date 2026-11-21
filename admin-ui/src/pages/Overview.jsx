@@ -113,6 +113,16 @@ export default function Overview() {
 		);
 	}
 	const todo = todos(S, a);
+	const ready = S.health.filter((h) => h.ok);
+	const healthRow = (h) => (
+		<div className="row" key={h.label}>
+			<Status kind={h.ok ? 'ok' : 'bad'} mark={h.ok ? '✓' : '!'} />
+			<div className="grow">
+				<p className="t">{h.label}</p>
+				<p className="sub">{h.ok ? h.detail || 'Ready' : h.fix}</p>
+			</div>
+		</div>
+	);
 	return (
 		<>
 			{head}
@@ -166,15 +176,20 @@ export default function Overview() {
 			<section className="sec">
 				<h2>Connections</h2>
 				<div className="rows">
-					{S.health.map((h) => (
-						<div className="row" key={h.label}>
-							<Status kind={h.ok ? 'ok' : 'bad'} mark={h.ok ? '✓' : '!'} />
-							<div className="grow">
-								<p className="t">{h.label}</p>
-								<p className="sub">{h.ok ? h.detail || 'Ready' : h.fix}</p>
-							</div>
-						</div>
-					))}
+					{/* What needs fixing stays in view; the connections that are ready fold into one line */}
+					{S.health.filter((h) => !h.ok).map(healthRow)}
+					{ready.length ? (
+						<details className="fold" id="connReady">
+							<summary className="row">
+								<Status kind="ok" mark="✓" />
+								<div className="grow">
+									<p className="t">{ready.length === S.health.length ? 'All connections are ready' : `${plural(ready.length, 'other connection')} ready`}</p>
+									<p className="sub">{ready.map((h) => h.label).join(', ')}</p>
+								</div>
+							</summary>
+							{ready.map(healthRow)}
+						</details>
+					) : null}
 					<div className="row">
 						<Status kind={S.lastReply ? 'ok' : 'todo'} mark={S.lastReply ? '✓' : '!'} />
 						<div className="grow">

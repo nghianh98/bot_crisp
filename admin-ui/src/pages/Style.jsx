@@ -1,6 +1,6 @@
 // Writing style: a tool only. The team writes the rules, the introduction and the example replies; nothing about tone is fixed in code.
 import { Fragment, useEffect, useState } from "react";
-import { Btn, Header, Modal, Switch, act, closeModal, confirmBox, openModal } from "../components/ui.jsx";
+import { act, AutoText, Btn, closeModal, confirmBox, Header, Modal, openModal, Switch } from "../components/ui.jsx";
 import { api } from "../lib/api.js";
 import { ago, matches, n, plural } from "../lib/format.js";
 import { colName, guessColumns, parseDelimited, readSheetFile, toItems } from "../lib/sheet.js";
@@ -306,7 +306,7 @@ export default function Style() {
         <p className="hint">
           Write how every reply should look, one rule per line: length, how to open and close, whether to sign off with a name, how to show steps and links. You can add an example reply at the end. Snippets that are sent exactly as written (see Knowledge) don't follow these rules. The chat can't show bold or bullet symbols, so the bot always writes plain text.
         </p>
-        <textarea className="in" id="stRules" rows={16} maxLength={M.maxRulesChars} spellCheck={false} value={rules} onChange={(e) => setRules(e.target.value)} placeholder="Leave empty to give the bot no writing rules" />
+        <AutoText id="stRules" minRows={8} maxHeight={760} maxLength={M.maxRulesChars} spellCheck={false} value={rules} onChange={(e) => setRules(e.target.value)} placeholder="Leave empty to give the bot no writing rules" />
         <div className="toolbar">
           <Btn className="btn pri" onClick={() => saveSettings({ rules }, rules.trim() ? "Writing rules saved" : "Writing rules removed")}>
             Save rules
@@ -329,12 +329,12 @@ export default function Style() {
             <label htmlFor="stIntro">Introduce as</label>
             <div>
               <div className="toolbar" style={{ margin: 0 }}>
-                <input
-                  className="in"
+                <AutoText
+                  oneLine
                   id="stIntro"
                   maxLength={80}
                   value={intro}
-                  onChange={(e) => setIntro(e.target.value)}
+                  onChange={(e) => setIntro(e.target.value.replace(/\s*\n\s*/g, " "))}
                   placeholder={`For example: Alex from the ${S.settings.product && S.settings.product !== "our product" ? S.settings.product : "Acme"} Support Team`}
                   style={{ flex: 1, minWidth: 220 }}
                 />

@@ -1,5 +1,5 @@
 // Building blocks every page uses: buttons that wait for their work, switches, the page header, dialogs, the toast.
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fail, hideToast, useToast } from "../lib/toast.js";
 
 /** Wrap an event handler: an error it throws (or rejects with) is shown as a toast */
@@ -43,6 +43,67 @@ export function Btn({ onClick, busyText, disabled, children, className = "btn", 
 /** On/off switch. With an async onClick it waits like Btn. */
 export function Switch({ on, onClick, label = "", disabled }) {
   return <Btn className="sw" role="switch" aria-checked={on ? "true" : "false"} aria-label={label} disabled={disabled} onClick={onClick} />;
+}
+
+/**
+ * A text box that grows with its text, so long text is never hidden in a small scrolling box.
+ * minRows: its height when empty. maxHeight (px): from there on it scrolls. oneLine: Enter doesn't add a line (the text
+ * still wraps). `ref` reaches the <textarea>.
+ */
+export function AutoText({ minRows = 1, maxHeight = 560, oneLine = false, className = "in", ref, onKeyDown, ...rest }) {
+  const own = useRef(null);
+  const fit = () => {
+    const el = own.current;
+    if (!el || !el.scrollHeight) return; // not laid out yet (a hidden tab): keep the height given by rows
+    el.style.height = "auto";
+    const need = el.scrollHeight + 2;
+    el.style.height = `${Math.min(maxHeight, need)}px`;
+    el.style.overflowY = need > maxHeight ? "auto" : "hidden";
+  };
+  useLayoutEffect(fit, [rest.value]);
+  useEffect(() => {
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+  return (
+    <textarea
+      className={`${className} auto`}
+      rows={minRows}
+      ref={(el) => {
+        own.current = el;
+        if (typeof ref === "function") ref(el);
+        else if (ref) ref.current = el;
+      }}
+      onKeyDown={(e) => {
+        if (oneLine && e.key === "Enter") e.preventDefault();
+        onKeyDown?.(e);
+      }}
+      {...rest}
+    />
+  );
+}
+
+// One listener for every "⋯" menu on the page: a click outside or Esc closes the open one
+if (typeof document !== "undefined") {
+  const closeMenus = (keep) => {
+    for (const d of document.querySelectorAll("details.more[open]")) if (d !== keep) d.removeAttribute("open");
+  };
+  document.addEventListener("click", (e) => closeMenus(e.target.closest?.("details.more")));
+  document.addEventListener("keydown", (e) => e.key === "Escape" && closeMenus(null));
+}
+
+/** A "⋯" button that opens a small menu with the less-used actions of one row. Choosing an action closes it. */
+export function More({ label = "More actions", children }) {
+  return (
+    <details className="more">
+      <summary className="btn ghost sm" aria-label={label} title={label}>
+        ⋯
+      </summary>
+      <div className="more-pop" onClick={(e) => e.currentTarget.parentElement.removeAttribute("open")}>
+        {children}
+      </div>
+    </details>
+  );
 }
 
 export function Header({ title, desc, right }) {

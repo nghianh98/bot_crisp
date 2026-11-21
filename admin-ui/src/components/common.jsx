@@ -12,7 +12,6 @@ export function Chips({ x }) {
   const chip = (cls, text, title) => out.push(<span key={out.length} className={`chip${cls ? ` ${cls}` : ""}`} title={title}>{text}</span>);
   if (x.act && ACTIONS[x.act]) chip(ACTIONS[x.act][1], ACTIONS[x.act][0]);
   if (x.pri === "P1" || x.pri === "P2") chip(x.pri === "P1" ? "c-urgent" : "c-gap", x.pri, `Priority: ${x.pri === "P1" ? "critical" : "high"}`);
-  if (x.cat) chip("c-tag", tagFull(x.cat), tagLabel(x.cat));
   if (x.err) chip("c-urgent", "AI error", `The AI failed, so the customer got the backup reply: ${x.err}`);
   if (x.img) chip("", x.img === 1 ? "Looked at 1 image" : `Looked at ${x.img} images`, "Images the customer sent that the AI saw for this reply");
   if (x.urg) chip("c-urgent", "Angry customer");
@@ -21,6 +20,7 @@ export function Chips({ x }) {
   if (x.fb === "down") chip("c-urgent", "Rated not helpful");
   if (x.st === "fixed") chip("", "Improved");
   if (x.st === "dismissed") chip("", "Dismissed");
+  if (x.cat) chip("c-tag", tagFull(x.cat), tagLabel(x.cat)); // the topic comes last, as plain text
   return out;
 }
 

@@ -249,7 +249,7 @@ export default function Settings() {
   const file = useRef(null);
   const up = (k) => (e) => setD((cur) => ({ ...cur, [k]: e.target.value }));
 
-  // Bot mode switched in the box on the left: show it here too
+  // Bot mode switched in the box above the menu: show it here too
   useEffect(() => setD((cur) => ({ ...cur, mode: s.mode })), [s.mode]);
   // A key is set but its models aren't listed yet
   useEffect(() => {
@@ -583,7 +583,7 @@ export default function Settings() {
         </div>
       </section>
       <div className="savebar">
-        <p className="meta">You can also switch the bot mode quickly in the box on the left.</p>
+        <p className="meta">You can also switch the bot mode from the box above the menu.</p>
         <Btn className="btn pri" onClick={save}>
           Save settings
         </Btn>

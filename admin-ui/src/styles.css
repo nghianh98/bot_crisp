@@ -126,6 +126,8 @@ nav a[aria-current="page"] { background: var(--blues); color: var(--blue2); font
 
 .in { width: 100%; padding: 8px 10px; border: 1px solid #cdd3df; border-radius: 8px; background: #fff; }
 textarea.in { resize: vertical; min-height: 84px; line-height: 1.5; }
+/* A text box that grows with its text (AutoText in ui.jsx) */
+textarea.in.auto { min-height: 0; resize: none; overflow-y: hidden; display: block; }
 .in:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
 .in.inl { width: auto; display: inline-block; padding: 3px 6px; margin: 0 2px; }
 /* Every drop-down draws its own arrow (--chev), a little in from the right edge: the browser's own arrow sits right against the border */
@@ -180,7 +182,35 @@ select.in.inl { padding-right: 28px; background-position: right 9px center; }
 .c-handoff { background: var(--blues); border-color: transparent; color: var(--blue2); }
 .c-urgent { background: var(--reds); border-color: transparent; color: var(--red); }
 .c-gap { background: var(--ambers); border-color: transparent; color: var(--amber); }
-.c-tag { font-weight: 500; }
+/* The topic tag is plain text: colour is kept for the labels that need attention */
+.c-tag { font-weight: 500; border-color: transparent; background: none; color: var(--ink3); padding-left: 2px; padding-right: 2px; }
+
+/* A row's "⋯" menu with its less-used actions (More in ui.jsx) */
+.more { position: relative; }
+.more > summary { list-style: none; font-size: 17px; line-height: 1; letter-spacing: 1px; padding: 5px 9px 7px; }
+.more > summary::-webkit-details-marker { display: none; }
+.more[open] > summary { background: var(--bg); color: var(--ink); }
+.more-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 15; min-width: 172px; display: grid; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(22, 33, 58, 0.14); }
+.more-pop > * { display: flex; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: none; font-weight: 500; font-size: 13.5px; line-height: 1.3; text-align: left; text-decoration: none; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.more-pop > *:hover, .more-pop > *:focus-visible { background: var(--bg); }
+.more-pop > .danger { color: var(--red); }
+
+/* A choice between a few options on one line */
+.seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.seg label { position: relative; }
+.seg input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.seg span { display: block; padding: 5px 12px; border-radius: 7px; font-weight: 600; font-size: 13px; color: var(--ink2); white-space: nowrap; }
+.seg input:checked + span { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 33, 58, 0.14); }
+.seg input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 1px; }
+.seg input:disabled + span { opacity: 0.6; }
+
+/* A group of rows folded into one line (Overview → Connections that are ready) */
+.fold > summary { list-style: none; cursor: pointer; align-items: center; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: "Show"; flex: none; font-size: 13px; font-weight: 600; color: var(--blue2); }
+.fold[open] > summary::after { content: "Hide"; }
+.rows > * + .fold > summary { border-top: 1px solid var(--line2); }
+.fold > .row:first-of-type { border-top: 1px solid var(--line2); }
 
 /* ---------- Figures (numbers in one strip, not separate cards) ---------- */
 .figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
@@ -271,7 +301,9 @@ select.in.inl { padding-right: 28px; background-position: right 9px center; }
 .pv-opt input { accent-color: var(--blue); }
 .pv-opt select { font: inherit; color: var(--ink); border: 1px solid #cdd3df; border-radius: 6px; padding: 2px 26px 2px 6px; background: #fff var(--chev) no-repeat right 8px center / 12px 12px; }
 .snipmode { margin: 0 0 14px; }
-.snipmode .t { margin-bottom: 8px; }
+.snipmode .sm-h { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.snipmode .t { margin: 0; }
+.snipmode .note { margin-top: 8px; }
 .pv-cust { padding: 8px 18px; font-size: 12.5px; color: var(--ink2); background: var(--card); border-bottom: 1px solid var(--line); }
 .pv-cust summary { cursor: pointer; }
 .pv-cust p { margin: 6px 0; color: var(--ink3); }
@@ -312,7 +344,8 @@ select.in.inl { padding-right: 28px; background-position: right 9px center; }
 .pv-thumb img { display: block; width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .pv-thumb button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--ink); color: #fff; font-size: 10px; line-height: 1; cursor: pointer; padding: 0; }
 .msg.u img { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; margin-top: 6px; }
-.fab { position: fixed; right: 20px; bottom: 20px; z-index: 30; display: flex; align-items: center; gap: 8px; padding: 9px 16px 9px 10px; border-radius: 999px; border: 0; background: var(--ink); color: #fff; font-weight: 600; cursor: pointer; box-shadow: 0 8px 24px rgba(22, 33, 58, 0.25); }
+/* --fab-lift: the height of the page's sticky save bar (App.jsx), so the button sits above it instead of on its Save button */
+.fab { position: fixed; right: 20px; bottom: calc(20px + var(--fab-lift, 0px)); z-index: 30; display: flex; align-items: center; gap: 8px; padding: 9px 16px 9px 10px; border-radius: 999px; border: 0; background: var(--ink); color: #fff; font-weight: 600; cursor: pointer; box-shadow: 0 8px 24px rgba(22, 33, 58, 0.25); }
 .fab .av { margin: 0; }
 .scrim { position: fixed; inset: 0; background: rgba(22, 33, 58, 0.35); z-index: 35; display: none; }
 .scrim.on { display: block; }
