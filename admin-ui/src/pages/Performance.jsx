@@ -1,9 +1,11 @@
 // Performance: automation, involvement, resolution and satisfaction rates; funnel; customers per day; topics.
 import { DailyChart, Fig, Funnel, MonthNav } from "../components/common.jsx";
-import { Header } from "../components/ui.jsx";
+import { Header, act, confirmBox } from "../components/ui.jsx";
+import { api } from "../lib/api.js";
 import { monthLabel, n, pct } from "../lib/format.js";
 import { useAnalytics } from "../lib/hooks.js";
-import { shownMonth, tagFull, tagLabel, useStore } from "../lib/store.js";
+import { set, shownMonth, tagFull, tagLabel, useStore } from "../lib/store.js";
+import { toast } from "../lib/toast.js";
 
 export default function Performance() {
   const s = useStore();
@@ -37,6 +39,19 @@ export default function Performance() {
     ["Questions without knowledge", bot.gaps],
     ["Nudges sent to quiet customers", bot.nudges],
   ];
+  // Nothing counted this month: there is nothing to reset
+  const blank = !a.customers && !a.involved && !a.classified && !fbTotal && did.every(([, v]) => !v);
+  const reset = async () => {
+    const ok = await confirmBox(
+      `Reset the numbers of ${monthLabel(m)}?`,
+      `Every number on this page goes back to zero for ${monthLabel(m)}: customers, conversations with the bot, outcomes, ratings, topics and the bot's counts. This can't be undone. Replies on Conversations and Suggestions are kept.`,
+      "Reset numbers"
+    );
+    if (!ok) return;
+    const fresh = await api("/api/analytics", { op: "reset", month: m });
+    set((cur) => ({ an: { ...cur.an, [m]: fresh } }));
+    toast(`Numbers of ${monthLabel(m)} reset`);
+  };
   return (
     <>
       {head}
@@ -180,6 +195,24 @@ export default function Performance() {
           </tbody>
         </table>
         <p className="note">These counts are approximate: in rare cases two events arriving at once can shift a number by 1 or 2.</p>
+      </section>
+
+      <section className="sec">
+        <h2>Start over</h2>
+        <div className="form">
+          <div className="fr">
+            <div className="lb">
+              Numbers of {monthLabel(m)}
+              <small>Set every number on this page back to zero, for example after a test period. Replies on Conversations and Suggestions stay: delete those on the Conversations page.</small>
+            </div>
+            <div>
+              <button type="button" className="btn danger" id="resetNumbers" disabled={blank} onClick={act(reset)}>
+                Reset numbers
+              </button>
+              {blank ? <p className="meta">Nothing has been counted in {monthLabel(m)}.</p> : null}
+            </div>
+          </div>
+        </div>
       </section>
     </>
   );

@@ -38,6 +38,7 @@ export async function api(env, request, url) {
       case "POST /api/test": return json(await apiTest(env, body));
       case "POST /api/openai": return json(await apiOpenAI(env, body, who));
       case "GET /api/analytics": return json(await apiAnalytics(env, monthParam(env, url)));
+      case "POST /api/analytics": return json(await apiAnalyticsReset(env, body, who));
       case "GET /api/log": return json({ month: monthParam(env, url), items: (await readLog(env, monthParam(env, url))).items });
       case "POST /api/log": return json(await apiLogUpdate(env, body, who));
       case "POST /api/suggest": return json(await apiSuggest(env, body));
@@ -579,6 +580,16 @@ export async function apiAnalytics(env, month) {
     bot: s.bot, days, classified: Object.keys(s.cls).length,
     topics: Object.values(topics).sort((a, b) => b.conv - a.conv),
   };
+}
+
+/* Trang Performance → Reset numbers: đưa mọi số liệu của một tháng về 0 (vd sau giai đoạn chạy thử).
+   Chỉ xoá số liệu (stats:YYYY-MM): câu trả lời ở Conversations và Suggestions giữ nguyên. Không hoàn tác được. */
+export async function apiAnalyticsReset(env, body, who) {
+  if (body.op !== "reset") bad("Unknown action");
+  if (!/^\d{4}-\d{2}$/.test(body.month || "")) bad("Choose a month");
+  await env.KB.delete(`stats:${body.month}`);
+  await logChange(env, who, `Reset the Performance numbers of ${body.month}`);
+  return apiAnalytics(env, body.month);
 }
 
 export async function apiLogUpdate(env, body, who = "") {

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
-import { apiAnalytics, apiLogUpdate, apiSettings, apiSnippets, apiState } from "../src/admin/api.js";
+import { apiAnalytics, apiAnalyticsReset, apiLogUpdate, apiSettings, apiSnippets, apiState } from "../src/admin/api.js";
 import { localNow, parseBusinessHours, parseDaysOff, teamAvailabilityNote, teamStatus, tzLabel } from "../src/time.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
@@ -410,4 +410,19 @@ test("apiState: questions from the old report are not listed as bot replies on O
   assert.deepEqual([s.recent, s.lastReply, s.pending], [[], null, 1]);
   s = await run([old("g1", 1), { id: "r1", t: 5, sid: "s", q: "hi", a: "hello", act: "answer", gap: false }, old("g2", 9)]);
   assert.deepEqual([s.recent.map((x) => x.id), s.lastReply], [["r1"], 5]);
+});
+
+test("apiAnalyticsReset: a month's numbers go back to zero, replies stay", async () => {
+  const stats = { conv: { a: "20", b: "21" }, botConv: { a: "bot" }, fb: { a: "up" }, out: { a: "confirmed" }, cat: { a: "how-to" }, bot: { answers: 62, askInfo: 4, handoffs: 5, gaps: 22, urgent: 0, nudges: 3 }, days: { 20: { answers: 60, handoffs: 5, involved: 1 } } };
+  const log = JSON.stringify({ items: [{ id: "r1", t: 1, sid: "a", q: "hi", a: "hello", act: "answer" }] });
+  const KB = fakeKV({ "stats:2026-11": JSON.stringify(stats), "stats:2026-10": JSON.stringify(stats), "log:2026-11": log });
+  assert.equal((await apiAnalytics({ KB }, "2026-11")).customers, 2);
+  const a = await apiAnalyticsReset({ KB }, { op: "reset", month: "2026-11" }, "Linh");
+  assert.deepEqual([a.month, a.customers, a.involved, a.resolved, a.feedback, a.bot, a.topics, a.days.some((d) => d.answers || d.customers)], ["2026-11", 0, 0, 0, { up: 0, down: 0 }, { answers: 0, askInfo: 0, handoffs: 0, gaps: 0, urgent: 0, nudges: 0 }, [], false]);
+  assert.equal(KB.m.has("stats:2026-11"), false);
+  assert.equal(KB.m.get("log:2026-11"), log); // Conversations keeps its replies
+  assert.equal((await apiAnalytics({ KB }, "2026-10")).customers, 2); // other months are untouched
+  assert.equal(JSON.parse(KB.m.get("cfg:changelog")).at(-1).what, "Reset the Performance numbers of 2026-11");
+  await assert.rejects(apiAnalyticsReset({ KB }, { op: "reset", month: "November" }, "Linh"), /Choose a month/);
+  await assert.rejects(apiAnalyticsReset({ KB }, { month: "2026-11" }, "Linh"), /Unknown action/);
 });
