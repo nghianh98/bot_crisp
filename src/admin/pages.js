@@ -1,7 +1,7 @@
 // @ts-nocheck  (JavaScript thuần: tắt phần kiểm tra kiểu TypeScript của trình sửa code Cloudflare)
 // Trang đăng nhập và trang trạng thái (đường dẫn /).
 import { MODE_LABELS, cfg, currentMode } from "../config.js";
-import { parseBusinessHours } from "../time.js";
+import { localNow, parseBusinessHours, parseDaysOff, teamStatus, tzLabel } from "../time.js";
 import { esc, getJSON } from "../util.js";
 import { uiVersion } from "./ui.js";
 
@@ -46,14 +46,24 @@ export async function statusPage(env, url) {
   const meta = (await getJSON(env, "kb:meta")) || {};
   const bh = cfg(env, "BUSINESS_HOURS");
   const row = (k, v) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`;
+  // Giờ làm việc theo đúng tình hình lúc này: kèm múi giờ, các ngày nghỉ sắp tới và team đang làm hay nghỉ (như trang Overview)
+  const offset = Number(cfg(env, "UTC_OFFSET_HOURS")) || 0;
+  const tz = tzLabel(offset);
+  const dayLabel = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).replace(",", "");
+  const offs = (parseDaysOff(cfg(env, "DAYS_OFF")) || []).filter((d) => d >= localNow(env).date);
+  const team = teamStatus(env);
+  const builtAt = Date.parse(meta.builtAt);
+  const built = Number.isNaN(builtAt) ? meta.builtAt : `${new Date(builtAt + offset * 3600000).toISOString().slice(0, 16).replace("T", " ")} ${tz}`;
   return html(
     cfg(env, "BOT_NAME"),
     `<div class="wrap"><h1>${esc(cfg(env, "BOT_NAME"))} is running</h1><p class="muted">Manage the bot in the <a href="/admin">admin</a>. Crisp webhook: <code>/crisp/hooks</code></p>
 <h2>Configuration</h2><table>${checks.map(([k, ok]) => row(k, ok ? "✓ OK" : "✗ Missing")).join("")}</table>
 <h2>Bot</h2><table>
-${row("Help center", meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles <span class="muted">(built ${esc(meta.builtAt)})</span>` : "Not loaded yet. Wait a few minutes after turning on the Cron trigger.")}
+${row("Help center", meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles <span class="muted">(built ${esc(built)})</span>` : "Not loaded yet. Wait a few minutes after turning on the Cron trigger.")}
 ${row("Mode", esc(MODE_LABELS[currentMode(env)]))}
-${row("Working hours", bh ? (parseBusinessHours(bh) ? `<code>${esc(bh)}</code>` : `✗ Invalid format: <code>${esc(bh)}</code>`) : "Not set")}
+${row("Working hours", bh ? (parseBusinessHours(bh) ? `<code>${esc(bh)}</code> <span class="muted">(${esc(tz)})</span>` : `✗ Invalid format: <code>${esc(bh)}</code>`) : "Not set")}
+${offs.length ? row("Days off", esc(offs.map(dayLabel).join(", "))) : ""}
+${team ? row("Right now", team.open ? "Within working hours" : `${team.dayOff ? "Day off" : "Outside working hours"}. The bot tells customers the team is back ${esc(team.at)}.`) : ""}
 ${row("Model", `<code>${esc(cfg(env, "OPENAI_MODEL"))}</code>`)}
 ${row("Admin UI version", `<code>${esc(await uiVersion(env, url.origin))}</code>`)}</table></div>`
   );

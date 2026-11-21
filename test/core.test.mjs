@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
 import { apiAnalytics, apiAnalyticsReset, apiLogUpdate, apiSettings, apiSnippets, apiState } from "../src/admin/api.js";
 import { localNow, parseBusinessHours, parseDaysOff, teamAvailabilityNote, teamStatus, tzLabel } from "../src/time.js";
+import { statusPage } from "../src/admin/pages.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
 import { freshTimestamp, getMessages, verifySignature } from "../src/crisp.js";
@@ -448,4 +449,24 @@ test("apiLogUpdate remove: a deleted conversation's waiting nudge is cancelled, 
   KB.m.delete("fu:queue");
   r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["r2"], remove: true }, "Linh");
   assert.equal(r.nudges, 0);
+});
+
+test("status page: working hours come with the time zone, the days off and the state right now", async () => {
+  const today = localNow({ UTC_OFFSET_HOURS: "7" }).date;
+  const KB = fakeKV({ "kb:meta": JSON.stringify({ pages: 84, total: 84, builtAt: "2026-11-21T11:27:50.002Z" }) });
+  const page = async (extra) => (await statusPage({ KB, BOT_NAME: "Bot", UTC_OFFSET_HOURS: "7", ...extra }, new URL("https://bot.example/"))).text();
+  // Every day is a working day but today is a day off: the page says so instead of only printing the hours
+  let t = await page({ BUSINESS_HOURS: "Mon-Sun 00:00-24:00", DAYS_OFF: `2020-01-01,${today}` });
+  assert.match(t, /<td>Working hours<\/td><td><code>Mon-Sun 00:00-24:00<\/code> <span class="muted">\(GMT\+7\)<\/span>/);
+  assert.match(t, /<td>Days off<\/td><td>[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}<\/td>/); // only today: the 2020 date is over
+  assert.match(t, /<td>Right now<\/td><td>Day off\. The bot tells customers the team is back tomorrow \([A-Z][a-z]+\) at 00:00 GMT\+7\./);
+  assert.match(t, /built 2026-11-21 18:27 GMT\+7/);
+  // No days off, always open
+  t = await page({ BUSINESS_HOURS: "Mon-Sun 00:00-24:00" });
+  assert.match(t, /<td>Right now<\/td><td>Within working hours<\/td>/);
+  assert.doesNotMatch(t, /Days off/);
+  // Working hours not set: nothing to say about now
+  t = await page({});
+  assert.match(t, /<td>Working hours<\/td><td>Not set<\/td>/);
+  assert.doesNotMatch(t, /Right now/);
 });
