@@ -13,7 +13,7 @@ tr:last-child td{border-bottom:0}.muted{color:#6b7591}a{color:#2a5be8}code{backg
 .mark{width:36px;height:36px;border-radius:10px;background:#f0661e;display:grid;place-items:center;color:#fff;font-weight:700;margin-bottom:16px}
 label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}input{width:100%;padding:11px 12px;border:1px solid #cfd4df;border-radius:8px;font:inherit}
 input:focus{outline:2px solid #2a5be8;outline-offset:1px;border-color:#2a5be8}button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:8px;background:#2a5be8;color:#fff;font:600 15px "Be Vietnam Pro",system-ui,sans-serif;cursor:pointer}
-.err{color:#c62f2f;margin:12px 0 0}`;
+.err{color:#c62f2f;margin:12px 0 0}.hint{color:#6b7591;font-size:13px;margin:6px 0 0}`;
 
 export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">`;
 
@@ -28,10 +28,10 @@ export const loginPage = (env, next, error = "", name = "") =>
     `<form class="login" method="post" action="/login"><div class="mark">T</div><h1>${esc(cfg(env, "BOT_NAME"))}</h1><p class="muted" style="margin:0">Bot admin</p>
 ${env.ADMIN_KEY ? "" : `<p class="err">The admin is not set up yet: add a Secret named <code>ADMIN_KEY</code> in Cloudflare.</p>`}
 <input type="hidden" name="next" value="${esc(next)}">
-<label for="name">Your name</label><input id="name" name="name" value="${esc(name)}" placeholder="For example: Linh" autocomplete="nickname" maxlength="40">
+<label for="name">Your name</label><input id="name" name="name" value="${esc(name)}" autocomplete="nickname" maxlength="40" aria-describedby="nameHint">
+<p class="hint" id="nameHint">Any name you like, or leave it empty. It only shows who made a change in the change log.</p>
 <label for="key">Password</label><input id="key" name="key" type="password" autocomplete="current-password" ${name ? "autofocus" : ""}>
-${error ? `<p class="err">${esc(error)}</p>` : ""}<button>Sign in</button>
-<p class="muted" style="font-size:13px;margin:16px 0 0">Your name is shown in the change log.</p></form>`
+${error ? `<p class="err">${esc(error)}</p>` : ""}<button>Sign in</button></form>`
   );
 
 export async function statusPage(env, url) {
