@@ -23,6 +23,17 @@ export async function unscheduleFollowup(env, sessionId) {
   await putJSON(env, QUEUE, q);
 }
 
+/** Bỏ lời nhắc đang chờ của nhiều hội thoại trong một lần ghi (vd các hội thoại vừa bị xoá ở trang Conversations). → số lời nhắc đã bỏ */
+export async function unscheduleFollowups(env, sessionIds) {
+  if (!env.KB) return 0;
+  const q = await getJSON(env, QUEUE);
+  const hit = [...new Set(sessionIds || [])].filter((sid) => q && q[sid]);
+  if (!hit.length) return 0;
+  for (const sid of hit) delete q[sid];
+  await putJSON(env, QUEUE, q);
+  return hit.length;
+}
+
 export async function scheduleAfterReply(env, websiteId, sessionId, action) {
   const fu = env.__fu;
   const now = Date.now();

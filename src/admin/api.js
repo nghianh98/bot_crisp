@@ -2,6 +2,7 @@
 // API của trang quản trị (/api/*): trang /admin gọi vào đây để đọc và lưu dữ liệu.
 import { isAdmin, whoOf } from "./auth.js";
 import { callOpenAI, generateReply, listModels, productLine } from "../ai.js";
+import { unscheduleFollowups } from "../followup.js";
 import { handoffNote } from "../handoff.js";
 import { cleanCustomer } from "../crisp.js";
 import { AI_KEY, FOLLOWUP_DEFAULT, GUIDANCE_CATS, MAX_CUSTOM_REASONS, MAX_DAYS_OFF, MAX_FIELDS, MAX_RULE_CHARS, MAX_TAGS, MAX_TEST_QUESTIONS, MODE_LABELS, PRIORITY_DEFAULT, PRIORITY_LEVELS, QUEUE, SETTINGS_FIELDS, SETTINGS_VERSION, TRIGGERS, UPSET_DEFAULT, URGENT_DEFAULT, UTC_OFFSETS, WAITING_DEFAULT, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, normQuestions, upgradeSettings, withAiKey, withConfig } from "../config.js";
@@ -605,9 +606,13 @@ export async function apiLogUpdate(env, body, who = "") {
     await putJSON(env, `log:${month}`, log);
     const left = new Set(log.items.map((x) => x.sid).filter(Boolean));
     await forgetReplies(env, month, hit, left);
-    const convs = new Set(hit.map((x) => x.sid).filter((sid) => sid && !left.has(sid))).size;
+    // Hội thoại bị xoá hết: bỏ luôn lời nhắc đang chờ gửi cho nó, để bot không nhắn thêm vào chat đó và không đếm lại.
+    // (Trạng thái "đã chuyển người / nhân viên đang xử lý" của hội thoại thì giữ: nó quyết định bot có được trả lời không.)
+    const gone = [...new Set(hit.map((x) => x.sid).filter((sid) => sid && !left.has(sid)))];
+    const nudges = await unscheduleFollowups(env, gone);
+    const convs = gone.length;
     await logChange(env, who, `Deleted ${hit.length} bot ${hit.length === 1 ? "reply" : "replies"} from Conversations${convs ? ` (${convs} whole conversation${convs === 1 ? "" : "s"})` : ""}`);
-    return { removed: hit.map((x) => x.id) };
+    return { removed: hit.map((x) => x.id), nudges };
   }
   if (body.del === true) {
     // Xoá hẳn khỏi trang Suggestions (không còn ở Open lẫn Handled). Câu trả lời của bot vẫn nằm ở trang Conversations,

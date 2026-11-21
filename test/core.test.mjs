@@ -426,3 +426,26 @@ test("apiAnalyticsReset: a month's numbers go back to zero, replies stay", async
   await assert.rejects(apiAnalyticsReset({ KB }, { op: "reset", month: "November" }, "Linh"), /Choose a month/);
   await assert.rejects(apiAnalyticsReset({ KB }, { month: "2026-11" }, "Linh"), /Unknown action/);
 });
+
+test("apiLogUpdate remove: a deleted conversation's waiting nudge is cancelled, other chats keep theirs", async () => {
+  const items = [
+    { id: "t1", t: 1, sid: "test", q: "hi", a: "…", act: "answer" },
+    { id: "t2", t: 2, sid: "test", q: "more", a: "…", act: "answer" },
+    { id: "r1", t: 3, sid: "real", q: "how", a: "…", act: "answer" },
+    { id: "r2", t: 4, sid: "real", q: "ok", a: "…", act: "answer" },
+  ];
+  const nudge = (sid) => ({ w: "w", step: "nudge", kind: "answer", from: 1, due: Date.now() + 60000, sid });
+  const KB = fakeKV({ "log:2026-11": JSON.stringify({ items }), "fu:queue": JSON.stringify({ test: nudge("test"), real: nudge("real"), other: nudge("other") }), "state:test": "handoff" });
+  const queue = () => Object.keys(JSON.parse(KB.m.get("fu:queue")));
+  // One reply of a chat that has more left: its nudge stays
+  let r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["r1", "t1"], remove: true }, "Linh");
+  assert.deepEqual([r.nudges, queue()], [0, ["test", "real", "other"]]);
+  // The last reply of the test chat: its nudge goes, the others stay; the chat's handed-off state is kept
+  r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["t2"], remove: true }, "Linh");
+  assert.deepEqual([r.nudges, queue()], [1, ["real", "other"]]);
+  assert.equal(KB.m.get("state:test"), "handoff");
+  // No queue at all is fine
+  KB.m.delete("fu:queue");
+  r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["r2"], remove: true }, "Linh");
+  assert.equal(r.nudges, 0);
+});
