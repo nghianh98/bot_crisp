@@ -118,8 +118,10 @@ export async function apiState(env, url, who) {
       { label: "Help center", ok: (meta.pages || 0) > 0, detail: meta.pages ? `${meta.pages}/${meta.total ?? meta.urls} articles in use` : "Not loaded yet", fix: cfg(env, "HELP_CENTER_URL") ? "Click Sync now on the Knowledge page. Also check the Cron trigger * * * * * is on in Cloudflare." : "Add your help center link in Settings → Product, then click Sync now on the Knowledge page." },
     ],
     pending: log.items.filter((x) => x.gap && !x.st).length,
-    recent: log.items.slice(-6).reverse(),
-    lastReply: log.items.at(-1)?.t || null,
+    // Mục của báo cáo cũ (legacy) chỉ là câu hỏi, không phải câu trả lời của bot: chúng nằm ở trang Suggestions,
+    // trang Conversations không hiện chúng, nên Overview cũng không liệt kê.
+    recent: log.items.filter((x) => !x.legacy).slice(-6).reverse(),
+    lastReply: log.items.findLast((x) => !x.legacy)?.t || null,
     queued: Object.keys(queue || {}).length,
     changelog: changelog.slice(-80).reverse(),
     webhookUrl: `${url.origin}/crisp/hooks`,

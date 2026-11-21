@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
-import { apiAnalytics, apiLogUpdate, apiSettings, apiSnippets } from "../src/admin/api.js";
+import { apiAnalytics, apiLogUpdate, apiSettings, apiSnippets, apiState } from "../src/admin/api.js";
 import { localNow, parseBusinessHours, parseDaysOff, teamAvailabilityNote, teamStatus, tzLabel } from "../src/time.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
@@ -396,4 +396,18 @@ test("apiLogUpdate remove: deleted replies leave the log and the month's numbers
   await apiLogUpdate({ KB }, { month: "2026-11", ids: ["b2"], remove: true }, "Linh");
   assert.equal(read("stats:2026-11").bot.answers, 0);
   await assert.rejects(apiLogUpdate({ KB }, { month: "2026-11", ids: ["b2"], remove: true }, "Linh"), /not found/);
+});
+
+test("apiState: questions from the old report are not listed as bot replies on Overview", async () => {
+  const month = localNow({}).month;
+  const old = (id, t) => ({ id, t, q: `old ${id}`, gap: true, legacy: true, st: "dismissed" });
+  const run = async (items) => {
+    const KB = fakeKV({ [`log:${month}`]: JSON.stringify({ items, legacy: true }), "cfg:guidance": "[]", "cfg:snippets": "[]" });
+    return apiState(await withConfig({ KB }), new URL("https://bot.example/api/state"), "Linh");
+  };
+  // Only old-report questions left (every real reply was deleted): Overview shows no replies, Suggestions still counts open ones
+  let s = await run([old("g1", 1), old("g2", 2), { ...old("g3", 3), st: undefined }]);
+  assert.deepEqual([s.recent, s.lastReply, s.pending], [[], null, 1]);
+  s = await run([old("g1", 1), { id: "r1", t: 5, sid: "s", q: "hi", a: "hello", act: "answer", gap: false }, old("g2", 9)]);
+  assert.deepEqual([s.recent.map((x) => x.id), s.lastReply], [["r1"], 5]);
 });
