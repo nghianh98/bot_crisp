@@ -16,6 +16,7 @@
   --amber: #8f5400;
   --ambers: #fdf2de;
   --red: #c42f2f;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6478' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E"); /* the arrow of a drop-down */
   --reds: #fdeceb;
   --r: 10px;
   --font: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,7 +44,7 @@ h1, h2, h3 { margin: 0; }
 .mark { width: 34px; height: 34px; flex: none; border-radius: 10px; background: var(--orange); color: #fff; font-weight: 700; display: grid; place-items: center; }
 .mode { margin: 0 8px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); }
 .mode label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink2); margin-bottom: 2px; }
-.mode select { width: 100%; border: 0; background: transparent; font-weight: 600; padding: 2px 0; cursor: pointer; }
+.mode select { width: 100%; border: 0; background: transparent var(--chev) no-repeat right 2px center / 12px 12px; font-weight: 600; padding: 2px 20px 2px 0; cursor: pointer; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
 .dot.off { background: #a3aabb; }
 nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: 8px; color: var(--ink2); text-decoration: none; font-weight: 500; }
@@ -127,7 +128,10 @@ nav a[aria-current="page"] { background: var(--blues); color: var(--blue2); font
 textarea.in { resize: vertical; min-height: 84px; line-height: 1.5; }
 .in:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
 .in.inl { width: auto; display: inline-block; padding: 3px 6px; margin: 0 2px; }
-select.in { padding-right: 28px; }
+/* Every drop-down draws its own arrow (--chev), a little in from the right edge: the browser's own arrow sits right against the border */
+select { appearance: none; -webkit-appearance: none; }
+select.in { padding-right: 36px; background: #fff var(--chev) no-repeat right 12px center / 12px 12px; }
+select.in.inl { padding-right: 28px; background-position: right 9px center; }
 .chk { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0; cursor: pointer; }
 .chk input { margin-top: 4px; accent-color: var(--blue); }
 .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; margin-top: 6px; }
@@ -158,6 +162,7 @@ select.in { padding-right: 28px; }
 /* Settings → Working hours: what the bot says now, and the days off as removable chips */
 .teamnow { display: flex; gap: 8px; align-items: baseline; margin: 12px 0 0; font-size: 13.5px; color: var(--ink2); }
 .teamnow .dot { position: relative; top: -1px; }
+.ph .teamnow { margin-top: 6px; }
 .offs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .offs .chip { gap: 6px; padding: 3px 4px 3px 10px; font-size: 13px; }
 .offs .chip button { border: 0; background: none; color: var(--ink3); cursor: pointer; padding: 0 4px; font-size: 12px; line-height: 1; border-radius: 6px; }
@@ -264,7 +269,7 @@ select.in { padding-right: 28px; }
 .pv-a { display: flex; gap: 2px; flex: none; }
 .pv-opt { display: flex; gap: 8px; align-items: center; padding: 8px 18px; font-size: 12.5px; color: var(--ink2); background: var(--card); border-bottom: 1px solid var(--line); cursor: pointer; }
 .pv-opt input { accent-color: var(--blue); }
-.pv-opt select { font: inherit; color: var(--ink); border: 1px solid #cdd3df; border-radius: 6px; padding: 2px 6px; background: #fff; }
+.pv-opt select { font: inherit; color: var(--ink); border: 1px solid #cdd3df; border-radius: 6px; padding: 2px 26px 2px 6px; background: #fff var(--chev) no-repeat right 8px center / 12px 12px; }
 .snipmode { margin: 0 0 14px; }
 .snipmode .t { margin-bottom: 8px; }
 .pv-cust { padding: 8px 18px; font-size: 12.5px; color: var(--ink2); background: var(--card); border-bottom: 1px solid var(--line); }

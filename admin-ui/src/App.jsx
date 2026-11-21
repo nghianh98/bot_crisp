@@ -161,7 +161,7 @@ export default function App() {
 
   useEffect(() => {
     api("/api/state")
-      .then((data) => set((s) => ({ S: data, ui: { ...s.ui, month: data.month } })))
+      .then((data) => set((s) => ({ S: data, stateAt: Date.now(), ui: { ...s.ui, month: data.month } })))
       .catch((e) => setError(e.message));
   }, []);
 

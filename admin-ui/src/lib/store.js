@@ -4,6 +4,7 @@ import { api } from "./api.js";
 
 let state = {
   S: null, // data from /api/state
+  stateAt: 0, // when S was last read in full (Overview reads it again after a minute)
   an: {}, // analytics per month, loaded when a page needs it
   log: {}, // bot replies per month
   models: null, // OpenAI models for Settings: null = not loaded, { loading }, { list }, { error }

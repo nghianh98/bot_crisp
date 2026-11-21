@@ -6,7 +6,7 @@ import { handoffNote } from "../handoff.js";
 import { cleanCustomer } from "../crisp.js";
 import { AI_KEY, FOLLOWUP_DEFAULT, GUIDANCE_CATS, MAX_CUSTOM_REASONS, MAX_DAYS_OFF, MAX_FIELDS, MAX_RULE_CHARS, MAX_TAGS, MAX_TEST_QUESTIONS, MODE_LABELS, PRIORITY_DEFAULT, PRIORITY_LEVELS, QUEUE, SETTINGS_FIELDS, SETTINGS_VERSION, TRIGGERS, UPSET_DEFAULT, URGENT_DEFAULT, UTC_OFFSETS, WAITING_DEFAULT, applySettings, cfg, currentMode, effortLevel, keyHint, normEscalation, normFollowup, normQuestions, upgradeSettings, withAiKey, withConfig } from "../config.js";
 import { SYNC, SYNC_DAYS, autoSyncOf, helpOrigin, newSyncJob, normWebUrl, pageKey, rebuildKnowledge, rescheduleSync, selectorError, stepSync, storePage } from "../knowledge.js";
-import { logChange, normMonth, readLog } from "../stats.js";
+import { forgetReplies, logChange, normMonth, readLog } from "../stats.js";
 import { cleanTag, normTags, tagSlug } from "../tags.js";
 import { DEFAULT_RULES, MAX_EXAMPLES, MAX_RULES_CHARS, MAX_STYLE_CHARS, STYLE_KEY, cleanExample, cleanRules, getStyle, normStyle } from "../style.js";
 import { localNow, teamStatus } from "../time.js";
@@ -39,7 +39,7 @@ export async function api(env, request, url) {
       case "POST /api/openai": return json(await apiOpenAI(env, body, who));
       case "GET /api/analytics": return json(await apiAnalytics(env, monthParam(env, url)));
       case "GET /api/log": return json({ month: monthParam(env, url), items: (await readLog(env, monthParam(env, url))).items });
-      case "POST /api/log": return json(await apiLogUpdate(env, body));
+      case "POST /api/log": return json(await apiLogUpdate(env, body, who));
       case "POST /api/suggest": return json(await apiSuggest(env, body));
       case "GET /api/export": return apiExport(env);
       case "POST /api/import": return json(await apiImport(env, body, who));
@@ -579,12 +579,23 @@ export async function apiAnalytics(env, month) {
   };
 }
 
-export async function apiLogUpdate(env, body) {
+export async function apiLogUpdate(env, body, who = "") {
   const month = /^\d{4}-\d{2}$/.test(body.month || "") ? body.month : localNow(env).month;
   const log = await readLog(env, month);
   const ids = new Set([].concat(body.ids || [], body.id || []));
   const hit = log.items.filter((x) => ids.has(x.id));
   if (!hit.length) bad("Conversation not found. Reload the page.");
+  if (body.remove === true) {
+    // Trang Conversations → Delete: xoá hẳn câu trả lời khỏi nhật ký (vd hội thoại team tự test). Nó biến mất ở
+    // Conversations, Suggestions, Overview và được trừ khỏi số liệu tháng đó (stats.js → forgetReplies). Không hoàn tác được.
+    log.items = log.items.filter((x) => !ids.has(x.id));
+    await putJSON(env, `log:${month}`, log);
+    const left = new Set(log.items.map((x) => x.sid).filter(Boolean));
+    await forgetReplies(env, month, hit, left);
+    const convs = new Set(hit.map((x) => x.sid).filter((sid) => sid && !left.has(sid))).size;
+    await logChange(env, who, `Deleted ${hit.length} bot ${hit.length === 1 ? "reply" : "replies"} from Conversations${convs ? ` (${convs} whole conversation${convs === 1 ? "" : "s"})` : ""}`);
+    return { removed: hit.map((x) => x.id) };
+  }
   if (body.del === true) {
     // Xoá hẳn khỏi trang Suggestions (không còn ở Open lẫn Handled). Câu trả lời của bot vẫn nằm ở trang Conversations,
     // chỉ bỏ dấu "thiếu kiến thức". Mục kiểu cũ (legacy) chỉ hiện ở Suggestions nên bỏ luôn khỏi nhật ký.

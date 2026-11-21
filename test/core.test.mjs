@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capHistory, pauseHours, resolvedSinceLastReply, respond, shouldAnswer, teamNotes, toHistory } from "../src/bot.js";
-import { apiLogUpdate, apiSettings, apiSnippets } from "../src/admin/api.js";
+import { apiAnalytics, apiLogUpdate, apiSettings, apiSnippets } from "../src/admin/api.js";
 import { localNow, parseBusinessHours, parseDaysOff, teamAvailabilityNote, teamStatus, tzLabel } from "../src/time.js";
 import { withConfig } from "../src/config.js";
 import { effortLevel } from "../src/config.js";
@@ -351,4 +351,49 @@ test("settings: days off are saved and checked", async () => {
   await assert.rejects(apiSettings(env, { settings: { daysOff: "next friday" } }, "Linh"), /Days off/);
   await apiSettings(env, { settings: { daysOff: "" } }, "Linh");
   assert.equal(JSON.parse(KB.m.get("cfg:settings")).daysOff, "");
+});
+
+test("apiLogUpdate remove: deleted replies leave the log and the month's numbers", async () => {
+  const at = (d, h) => Date.UTC(2026, 10, d, h);
+  const items = [
+    { id: "a1", t: at(20, 3), sid: "test", q: "hi", a: "…", act: "answer", gap: false, urg: false },
+    { id: "a2", t: at(20, 4), sid: "test", q: "it is broken!!", a: "…", act: "handoff", gap: true, urg: true },
+    { id: "a3", t: at(21, 4), sid: "test", q: "hello?", a: "…", act: "handoff", ho: true },
+    { id: "b1", t: at(21, 5), sid: "real", q: "how do I…", a: "…", act: "ask_info" },
+    { id: "b2", t: at(21, 6), sid: "real", q: "ok", a: "…", act: "answer" },
+  ];
+  const stats = {
+    conv: { test: "20", real: "21", other: "21" }, botConv: { test: "handoff", real: "bot" }, cat: { test: "other", real: "how-to" }, cls: { test: "bug" }, fb: { test: "down" }, out: { real: "assumed" },
+    bot: { answers: 5, askInfo: 1, handoffs: 1, gaps: 1, urgent: 1, nudges: 2 },
+    days: { 20: { answers: 2, handoffs: 1, involved: 1 }, 21: { answers: 3, handoffs: 0, involved: 1 } },
+  };
+  const KB = fakeKV({ "log:2026-11": JSON.stringify({ items }), "stats:2026-11": JSON.stringify(stats) });
+  const read = (k) => JSON.parse(KB.m.get(k));
+
+  // One reply of a conversation that has more: only the per-reply numbers go down
+  await apiLogUpdate({ KB }, { month: "2026-11", ids: ["b1"], remove: true }, "Linh");
+  assert.deepEqual(read("log:2026-11").items.map((x) => x.id), ["a1", "a2", "a3", "b2"]);
+  let s = read("stats:2026-11");
+  assert.deepEqual(s.bot, { answers: 4, askInfo: 0, handoffs: 1, gaps: 1, urgent: 1, nudges: 2 });
+  assert.deepEqual(s.days[21], { answers: 2, handoffs: 0, involved: 1 });
+  assert.equal(s.botConv.real, "bot");
+  assert.equal(read("cfg:changelog").at(-1).what, "Deleted 1 bot reply from Conversations");
+
+  // Every reply of the test chat: the conversation leaves the numbers completely
+  const r = await apiLogUpdate({ KB }, { month: "2026-11", ids: ["a1", "a2", "a3"], remove: true }, "Linh");
+  assert.deepEqual(r.removed, ["a1", "a2", "a3"]);
+  assert.deepEqual(read("log:2026-11").items.map((x) => x.id), ["b2"]);
+  s = read("stats:2026-11");
+  assert.deepEqual(s.bot, { answers: 1, askInfo: 0, handoffs: 0, gaps: 0, urgent: 0, nudges: 2 });
+  assert.deepEqual(s.days, { 20: { answers: 0, handoffs: 0, involved: 0 }, 21: { answers: 1, handoffs: 0, involved: 1 } });
+  assert.deepEqual([s.conv, s.botConv, s.cat, s.cls, s.fb, s.out], [{ real: "21", other: "21" }, { real: "bot" }, { real: "how-to" }, {}, {}, { real: "assumed" }]);
+  assert.equal(read("cfg:changelog").at(-1).what, "Deleted 3 bot replies from Conversations (1 whole conversation)");
+  const a = await apiAnalytics({ KB }, "2026-11");
+  assert.deepEqual([a.customers, a.involved, a.resolved, a.handoff, a.feedback.down], [2, 1, 1, 0, 0]);
+
+  // Numbers never go below zero, and an unknown id is refused
+  KB.m.set("stats:2026-11", JSON.stringify({ bot: { answers: 0 }, days: {} }));
+  await apiLogUpdate({ KB }, { month: "2026-11", ids: ["b2"], remove: true }, "Linh");
+  assert.equal(read("stats:2026-11").bot.answers, 0);
+  await assert.rejects(apiLogUpdate({ KB }, { month: "2026-11", ids: ["b2"], remove: true }, "Linh"), /not found/);
 });

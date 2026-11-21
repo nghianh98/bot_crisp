@@ -1,9 +1,11 @@
 // Overview: how the bot is doing, this month's numbers, to-dos, connections, latest replies.
+import { useEffect } from 'react';
 import { Chips, Fig } from '../components/common.jsx';
 import { Header } from '../components/ui.jsx';
+import { api } from '../lib/api.js';
 import { fmtClock, fmtDay, fmtTime, monthLabel, n, pct, plural, tzLabel } from '../lib/format.js';
 import { useAnalytics } from '../lib/hooks.js';
-import { useStore } from '../lib/store.js';
+import { get, set, useStore } from '../lib/store.js';
 
 const MODE_SENTENCE = {
 	off: 'The bot is off: only your team answers customers.',
@@ -13,7 +15,7 @@ const MODE_SENTENCE = {
 
 function statusSentence(S) {
 	const s = S.settings;
-	return `${MODE_SENTENCE[s.mode]} ${s.businessHours ? `Team working hours: ${s.businessHours} (${tzLabel(S.meta.utcOffset)}).${S.team?.dayOff ? " Today is a day off for the team." : ""}` : "Working hours aren't set."}`;
+	return `${MODE_SENTENCE[s.mode]} ${s.businessHours ? `Team working hours: ${s.businessHours} (${tzLabel(S.meta.utcOffset)}).` : "Working hours aren't set."}`;
 }
 
 function todos(S, a) {
@@ -77,7 +79,31 @@ function Status({ kind, mark }) {
 export default function Overview() {
 	const { S } = useStore();
 	const { data: a, done } = useAnalytics(S.month, { quiet: true });
-	const head = <Header title="Overview" desc={statusSentence(S)} />;
+	// Opened after a while (the page was left open, or you came back from another page): read the bot's state again, so
+	// the working status and the latest replies below are the current ones
+	useEffect(() => {
+		if (Date.now() - (get().stateAt || 0) < 60000) return;
+		api('/api/state')
+			.then((data) => set((s) => ({ S: { ...s.S, ...data }, stateAt: Date.now() })))
+			.catch(() => {});
+	}, []);
+	const team = S.team; // working or off right now, from the saved working hours and days off
+	const head = (
+		<Header
+			title="Overview"
+			desc={
+				<>
+					{statusSentence(S)}
+					{team ? (
+						<span className="teamnow">
+							<span className={`dot${team.open ? '' : ' off'}`} aria-hidden="true" />
+							{team.open ? 'Right now: within working hours.' : `Right now: ${team.dayOff ? 'day off' : 'outside working hours'}. The bot tells customers the team is back ${team.at}.`}
+						</span>
+					) : null}
+				</>
+			}
+		/>
+	);
 	if (!done) {
 		return (
 			<>

@@ -79,6 +79,40 @@ export async function markLog(env, sessionId, patch) {
   }
 }
 
+/* Trừ các câu trả lời vừa xoá (trang Conversations → Delete, vd hội thoại team tự test) khỏi số liệu của tháng.
+   gone = các mục nhật ký vừa xoá; left = Set các hội thoại vẫn còn câu trả lời trong nhật ký tháng đó.
+   Từng câu: trừ số câu trả lời, số lần hỏi thêm thông tin, thiếu kiến thức, khách bực, chuyển người (theo ngày và cả tháng).
+   Hội thoại không còn câu nào: bỏ hẳn khỏi thống kê (khách, bot tham gia, kết quả, đánh giá, chủ đề). Số không xuống dưới 0. */
+export async function forgetReplies(env, month, gone, left) {
+  const key = `stats:${month}`;
+  const s = normMonth(await getJSON(env, key, {}));
+  const dec = (o, k) => {
+    if (o && o[k] > 0) o[k]--;
+  };
+  const first = {}; // hội thoại → câu trả lời sớm nhất trong số vừa xoá
+  for (const x of gone) {
+    if (x.legacy) continue; // mục của báo cáo cũ: không nằm trong số liệu này
+    const d = s.days[localNow(env, x.t).day];
+    dec(s.bot, "answers");
+    dec(d, "answers");
+    if (x.act === "ask_info") dec(s.bot, "askInfo");
+    if (x.gap) dec(s.bot, "gaps");
+    if (x.urg) dec(s.bot, "urgent");
+    // Lần chuyển người được đếm ở câu trả lời đầu tiên chuyển (ho = hội thoại đã chuyển từ trước)
+    if (x.act === "handoff" && !x.ho) {
+      dec(s.bot, "handoffs");
+      dec(d, "handoffs");
+    }
+    if (x.sid && (!first[x.sid] || x.t < first[x.sid].t)) first[x.sid] = x;
+  }
+  for (const [sid, x] of Object.entries(first)) {
+    if (left.has(sid)) continue;
+    if (s.botConv[sid]) dec(s.days[localNow(env, x.t).day], "involved");
+    for (const k of ["conv", "cls", "cat", "botConv", "fb", "out"]) delete s[k][sid];
+  }
+  await putJSON(env, key, s);
+}
+
 export async function logChange(env, who, what) {
   const arr = await getJSON(env, "cfg:changelog", []);
   arr.push({ t: Date.now(), who: who || "Admin", what: clip(what, 300) });
